@@ -5,3 +5,5 @@
 !.gitignore
 !README.md
 !DataSetShape.schema.json
+!expected-shapes/
+!expected-shapes/*.shape.json

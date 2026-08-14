@@ -1,0 +1,17 @@
+{
+  "tables": [
+    {
+      "name": "Master",
+      "minimumRows": 0,
+      "columns": [
+        "xm",
+        "nl",
+        "tmh",
+        "zxksmc",
+        "XMMC",
+        "xb",
+        "flmc"
+      ]
+    }
+  ]
+}

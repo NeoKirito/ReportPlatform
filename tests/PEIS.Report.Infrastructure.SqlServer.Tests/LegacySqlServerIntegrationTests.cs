@@ -36,7 +36,8 @@ public sealed class LegacySqlServerIntegrationTests
         var observed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         while (await reader.ReadAsync()) observed.Add(reader.GetString(0));
 
-        Assert.Contains(context.Mapping.DefinitionTable, observed);
+        var mappedTableName = context.Mapping.DefinitionTable.Split('.', StringSplitOptions.RemoveEmptyEntries).Last();
+        Assert.Contains(mappedTableName, observed);
     }
 
     [LegacySqlServerReportFixtureFact]
@@ -202,13 +203,15 @@ internal sealed class LegacySqlServerTestContext
 
         var mapping = new LegacyReportSchemaMapping
         {
-            DefinitionTable = ReadString("REPORTPLATFORM_TEST_DEFINITION_TABLE", "xt_bbdy"),
-            ReportIdColumn = ReadString("REPORTPLATFORM_TEST_REPORT_ID_COLUMN", "bbid"),
-            TemplateColumn = ReadString("REPORTPLATFORM_TEST_TEMPLATE_COLUMN", "bb_frx"),
-            SqlColumn = ReadString("REPORTPLATFORM_TEST_SQL_COLUMN", "bb_sql"),
+            DefinitionTable = ReadString("REPORTPLATFORM_TEST_DEFINITION_TABLE", "dbo.xt_bgdy_djwh_zzj"),
+            ReportIdColumn = ReadString("REPORTPLATFORM_TEST_REPORT_ID_COLUMN", "djid"),
+            TemplateColumn = ReadString("REPORTPLATFORM_TEST_TEMPLATE_COLUMN", "dj_frx"),
+            SqlColumn = ReadString("REPORTPLATFORM_TEST_SQL_COLUMN", "djsql"),
             VersionColumn = ReadOptionalString("REPORTPLATFORM_TEST_VERSION_COLUMN"),
             UpdatedAtColumn = ReadOptionalString("REPORTPLATFORM_TEST_UPDATED_AT_COLUMN"),
-            TemplateKeyPrefix = ReadString("REPORTPLATFORM_TEST_TEMPLATE_KEY_PREFIX", "legacy-db")
+            TemplateContentEncoding = ReadString("REPORTPLATFORM_TEST_TEMPLATE_CONTENT_ENCODING", "Base64Utf8"),
+            FirstResultSetTableName = ReadString("REPORTPLATFORM_TEST_FIRST_RESULT_SET_TABLE_NAME", "Master"),
+            TemplateKeyPrefix = ReadString("REPORTPLATFORM_TEST_TEMPLATE_KEY_PREFIX", "legacy-djwh")
         };
         mapping.Validate();
 
@@ -262,7 +265,8 @@ internal sealed class LegacySqlServerTestContext
             parameters[parameterName] = document.RootElement.Clone();
         }
 
-        using var payload = JsonDocument.Parse("{}");
+        var legacyPayloadJson = ReadOptionalString("REPORTPLATFORM_TEST_LEGACY_PAYLOAD_JSON") ?? "{}";
+        using var payload = JsonDocument.Parse(legacyPayloadJson);
         return new ReportRenderRequest(reportId ?? ReportId!, parameters, "legacy", null, null, payload.RootElement.Clone());
     }
 
