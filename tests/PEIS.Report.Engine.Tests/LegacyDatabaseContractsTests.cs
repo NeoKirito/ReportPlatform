@@ -99,6 +99,23 @@ public sealed class LegacyDatabaseContractsTests
     }
 
     [Fact]
+    public void Binder_leaves_unresolved_bracket_tokens_unchanged()
+    {
+        using var payloadDocument = JsonDocument.Parse("{\"grtjgcjjgid\":\"GROUP-001\"}");
+        var request = new ReportRenderRequest("xmtm", new Dictionary<string, JsonElement>(), LegacyPayload: payloadDocument.RootElement.Clone());
+        var ignored = 0;
+        var definition = CreateDefinition("1", ref ignored) with { SqlText = "select [grtjgcjjgid], [unresolved_identifier] from legacy_source where [grtjgcjjgid] = [grtjgcjjgid]" };
+
+        var binding = new AdoNetLegacyQueryParameterBinder().Bind(definition, request);
+
+        Assert.Equal("select @grtjgcjjgid, [unresolved_identifier] from legacy_source where @grtjgcjjgid = @grtjgcjjgid", binding.CommandText);
+        var parameter = Assert.Single(binding.Parameters);
+        Assert.Equal("grtjgcjjgid", parameter.Name);
+        Assert.Equal(System.Data.DbType.AnsiString, parameter.DbType);
+        Assert.Equal("GROUP-001", parameter.Value);
+    }
+
+    [Fact]
     public void Binder_reports_missing_parameter_explicitly()
     {
         var ignored = 0;

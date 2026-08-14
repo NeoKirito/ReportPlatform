@@ -1,4 +1,5 @@
 using System.Text;
+using System.Data;
 using System.Text.Json;
 using PEIS.Report.Contracts;
 using PEIS.Report.Engine;
@@ -10,7 +11,7 @@ namespace PEIS.Report.Infrastructure.SqlServer.Tests;
 public sealed class LegacyRealContractTests
 {
     [Fact]
-    public void Djwh_bbid_payload_resolves_to_confirmed_djid_definition_key()
+    public void Resolver_prefers_bbid_when_querytype_is_djwh()
     {
         using var document = JsonDocument.Parse("{\"querytype\":\"djwh\",\"bbid\":\"xmtm\",\"djid\":\"unverified-secondary-id\"}");
         var request = new ReportRenderRequest("xmtm", new Dictionary<string, JsonElement>(), LegacyPayload: document.RootElement.Clone());
@@ -19,6 +20,31 @@ public sealed class LegacyRealContractTests
 
         Assert.Equal("xmtm", result.DefinitionId);
         Assert.Equal("legacy-payload:querytype=djwh;bbid->djid", result.IdentifierSource);
+    }
+
+    [Fact]
+    public void Resolver_uses_request_reportid_when_no_matching_payload_pattern()
+    {
+        using var document = JsonDocument.Parse("{\"querytype\":\"djid\",\"bbid\":\"xmtm\",\"djid\":\"unverified-secondary-id\"}");
+        var request = new ReportRenderRequest("typed-report-id", new Dictionary<string, JsonElement>(), LegacyPayload: document.RootElement.Clone());
+
+        var result = new LegacyPayloadReportResolver().Resolve(request);
+
+        Assert.Equal("typed-report-id", result.DefinitionId);
+        Assert.Equal("legacy-payload:unverified-id-family-fallback", result.IdentifierSource);
+    }
+
+    [Fact]
+    public void DataTable_column_lookup_is_case_insensitive()
+    {
+        var master = new DataTable("Master");
+        master.Columns.Add("XMMC", typeof(string));
+
+        var lowerCaseLookup = master.Columns["xmmc"];
+
+        Assert.True(master.Columns.Contains("xmmc"));
+        Assert.NotNull(lowerCaseLookup);
+        Assert.Same(master.Columns["XMMC"], lowerCaseLookup);
     }
 
     [Fact]

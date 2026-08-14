@@ -10,8 +10,8 @@
 | `[name]` legacy placeholder | **CONFIRMED** | Real `xmtm.djsql` uses `[grtjgcjjgid]` and `[sfxmddid]`; the underlying procedure declares matching `varchar(max)` parameters. | `ILegacyQueryParameterBinder` changes matched bracket tokens to `@name` and supplies ANSI parameters. |
 | Nested JSON lookup | **CONFIRMED** | The supplied successful old API request keeps both required names under `djh`. | Binder recursively indexes scalar members of preserved `LegacyPayload`. |
 | `querytype=djwh` + `bbid` resolution | **CONFIRMED** | The supplied `bbid=xmtm` old request returns a PDF, while `xmtm` is a real `dbo.xt_bgdy_djwh_zzj.djid`. | `LegacyPayloadReportResolver` maps this confirmed payload family to the `djid` definition key. |
-| `djid` only | **PARTIAL** | The supplied `djid=xmtm` variant returns a legacy JSON error, not a PDF. The response does not isolate whether definition lookup or downstream SQL behavior caused it. | No direct `djid` resolver rule is claimed. |
-| `cxid` | **UNVERIFIED** | No approved valid `cxid` request or table relationship is available. | No resolver rule. |
+| `djid` only | **PARTIAL** | The controlled `djid=xmtm` request reaches a legacy JSON error whose GBK-decoded message is `列名 'grtjgcjjgid' 不明确` (column name is ambiguous), rather than returning a PDF. This is evidence of a downstream SQL ambiguity, not proof of a public direct-ID success path. Requests without `querytype` and with `querytype=djid` both produce the same non-PDF response class. | No direct `djid` resolver rule is claimed. |
+| `cxid` | **OUT OF CURRENT PRODUCTION CONTRACT** | A read-only `sys.objects`/`sys.columns` search found zero exact `cxid` object or column names. The 46 broader `cx` name matches are examination-item tables, constraints, and maintenance procedures; none is a report-definition family. | No resolver rule. Re-open only with an approved historical request or old implementation artifact. |
 | `${name}` placeholder | **UNVERIFIED** | No observed real SQL contained this syntax. | Not transformed. |
 | `PrepareQuery`, `Regex`, arbitrary `Replace` | **UNVERIFIED** | No old DLL, PDB, XML documentation, or approved publish package was supplied for static analysis. | Not emulated. |
 | Positional `?`, `{name}`, FastReport expression substitution | **UNVERIFIED** | No real SQL/FRX evidence in the approved sample requires these behaviors. | Not emulated. |
@@ -33,4 +33,4 @@ The binder is intentionally isolated in `ILegacyQueryParameterBinder`. It is res
 
 ## Required next evidence
 
-A valid `cxid` request, a valid direct `djid` request, and an old-service DLL or approved publish package remain necessary before expanding resolver precedence or adding `${...}`/Regex behavior. Until that evidence is collected, the Real Legacy Compatibility Gate remains **NOT VERIFIED** rather than PASS.
+A valid direct `djid` request that returns a PDF, a historical `cxid` request or implementation artifact if that family must be restored, and a licensed FastReport runtime remain necessary before claiming full legacy closure. The approved non-empty `Master` data-provider contract is now verified by a read-only integration test. Until the remaining independent gates are satisfied, the Real Legacy Compatibility Gate remains **NOT VERIFIED** rather than PASS.
