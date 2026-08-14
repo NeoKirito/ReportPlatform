@@ -27,4 +27,8 @@ public sealed class PrintBackendOptions
     public string Mode { get; set; } = "DryRun";
     public string? Executable { get; set; }
     public string ArgumentsTemplate { get; set; } = "{file} {printer} {copies}";
+    /// <summary>Additional attempts after the initial print command.</summary>
+    public int RetryCount { get; set; } = 1;
+    /// <summary>Delay between transient backend/spooler retries.</summary>
+    public int RetryDelaySeconds { get; set; } = 2;
 }

@@ -17,9 +17,23 @@ public sealed class BusinessPrintCoordinator(
     IHubContext<PrintAgentHub> hub,
     AgentRegistry registry,
     PrintScenarioCatalog scenarios,
-    PrintJobStateStore states)
+    PrintJobStateStore states,
+    PrintRequestIdempotencyStore idempotency)
 {
-    public async Task<CreatePrintJobResponse> CreateAsync(BusinessPrintRequest request, CancellationToken cancellationToken)
+    public Task<CreatePrintJobResponse> CreateAsync(BusinessPrintRequest request, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey))
+            return CreateCoreAsync(request, cancellationToken);
+
+        return idempotency.GetOrCreateAsync(
+            request.ActionCode,
+            request.StationId,
+            request.IdempotencyKey,
+            () => CreateCoreAsync(request, cancellationToken));
+    }
+
+    private async Task<CreatePrintJobResponse> CreateCoreAsync(BusinessPrintRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.ActionCode)) throw new ArgumentException("ActionCode is required.");
         if (string.IsNullOrWhiteSpace(request.StationId)) throw new ArgumentException("StationId is required.");
