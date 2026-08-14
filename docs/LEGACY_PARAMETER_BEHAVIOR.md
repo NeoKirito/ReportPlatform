@@ -1,38 +1,36 @@
-# Legacy parameter behavior evidence
+# Legacy Parameter Behavior
 
-This document records what is known about the parameter boundary for `POST /api/Reports/GetReportByJson`. It is an evidence ledger, not a claim of byte-for-byte compatibility with a historical PEIS renderer.
+> **Evidence rule.** **CONFIRMED** is backed by an approved real database/API observation and an executable regression test. **PARTIAL** has a controlled observation but cannot yet isolate all historical branches. **UNVERIFIED** has no approved real fixture or old implementation evidence. This ledger does not claim byte-for-byte renderer compatibility.
 
-> **Evidence rule.** A label of **CONFIRMED** means that the behavior is covered by the current code or an executed automated test. **STRONG EVIDENCE** means that source, configuration, or a controlled observation supports the conclusion but a real legacy database/FRX fixture has not yet validated it. **UNVERIFIED** means that no approved real fixture has been supplied.
+## Current status
 
-| Status | Statement | Evidence |
-|---|---|---|
-| **CONFIRMED** | The compatibility adapter accepts an arbitrary JSON object and preserves a cloned copy of the complete object in `ReportRenderRequest.LegacyPayload`. | `src/PEIS.Report.Api/Compatibility/LegacyReportRequestAdapter.cs`; API contract tests. |
-| **CONFIRMED** | `bbid`, `djid`, `cxid`, and `reportId` are detected case-insensitively only as a convenience to populate `ReportId`; preserving `LegacyPayload` does not depend on that inference. | `LegacyReportRequestAdapter`; source review. |
-| **CONFIRMED** | The SQL Server data provider sends typed `DbParameter` values through `ILegacyQueryParameterBinder`; it does not concatenate request values into report SQL. | `LegacyDatabaseContracts.cs`; unit tests `Binder_*`. |
-| **CONFIRMED** | A missing named parameter is reported as an explicit legacy database contract failure rather than silently omitted. | `LegacyDatabaseContractsTests.Binder_reports_missing_parameter_explicitly`. |
-| **CONFIRMED** | A complete `LegacyPayload` is preferred over inferred typed values when binding known parameter names. | `LegacyDatabaseContractsTests.Binder_prefers_complete_legacy_payload_without_string_substitution`. |
-| **STRONG EVIDENCE** | The legacy report definition can be configured to use normal ADO.NET `@name` parameter syntax because the production provider executes `SqlCommand` with parameter objects. | `SqlServerReportDataProvider` and `AdoNetLegacyQueryParameterBinder`. |
-| **UNVERIFIED** | Historical placeholder forms such as `${name}`, `{name}`, positional `?`, FastReport expression substitution, `PrepareQuery`, or custom legacy DLL transformations. | No approved legacy FRX, SQL, DLL, or request fixture was supplied. |
-| **UNVERIFIED** | Whether an individual `bbid`, `djid`, or `cxid` selects a definition directly or through a multi-table relationship. | The `xt_*` table names are known candidates only; real keys and relationships are not yet evidenced. |
+| Behavior | Status | Real evidence | Implemented boundary |
+|---|---|---|---|
+| `@name` ADO.NET parameter | **CONFIRMED** | The new provider executes parameter objects, and pre-existing unit tests cover `@tjh`. | Typed `SqlParameter`; no caller value concatenation. |
+| `[name]` legacy placeholder | **CONFIRMED** | Real `xmtm.djsql` uses `[grtjgcjjgid]` and `[sfxmddid]`; the underlying procedure declares matching `varchar(max)` parameters. | `ILegacyQueryParameterBinder` changes matched bracket tokens to `@name` and supplies ANSI parameters. |
+| Nested JSON lookup | **CONFIRMED** | The supplied successful old API request keeps both required names under `djh`. | Binder recursively indexes scalar members of preserved `LegacyPayload`. |
+| `querytype=djwh` + `bbid` resolution | **CONFIRMED** | The supplied `bbid=xmtm` old request returns a PDF, while `xmtm` is a real `dbo.xt_bgdy_djwh_zzj.djid`. | `LegacyPayloadReportResolver` maps this confirmed payload family to the `djid` definition key. |
+| `djid` only | **PARTIAL** | The supplied `djid=xmtm` variant returns a legacy JSON error, not a PDF. The response does not isolate whether definition lookup or downstream SQL behavior caused it. | No direct `djid` resolver rule is claimed. |
+| `cxid` | **UNVERIFIED** | No approved valid `cxid` request or table relationship is available. | No resolver rule. |
+| `${name}` placeholder | **UNVERIFIED** | No observed real SQL contained this syntax. | Not transformed. |
+| `PrepareQuery`, `Regex`, arbitrary `Replace` | **UNVERIFIED** | No old DLL, PDB, XML documentation, or approved publish package was supplied for static analysis. | Not emulated. |
+| Positional `?`, `{name}`, FastReport expression substitution | **UNVERIFIED** | No real SQL/FRX evidence in the approved sample requires these behaviors. | Not emulated. |
 
-## Confirmed implementation contract
+## Confirmed `xmtm` procedure boundary
 
-`ReportRenderRequest` carries two representations of caller input. `Parameters` is a case-insensitive dictionary used by typed application code. `LegacyPayload` is the cloned raw JSON object accepted by the legacy-compatible HTTP endpoint. The latter is intentionally retained so that a confirmed legacy binding strategy can be implemented without discarding fields that the new typed contract does not yet recognize.
+The database-owned `djsql` definition invokes `dbo.tjxt_fastreportgetTxmxx` with two bracketed tokens. The compatible binder transforms only these recognized scalar tokens into ADO.NET parameter placeholders. The result remains a parameterized command; it does not replace a payload value into SQL text.
 
-The binder produces ADO.NET parameters with explicit values rather than performing string replacement. This preserves the query-plan and injection-safety boundary for the currently supported `@name` model. A report SQL statement remains database-owned configuration; it is not treated as executable caller input.
+| Legacy payload path | Stored-procedure parameter | Database type | Binding type |
+|---|---|---|---|
+| `djh.grtjgcjjgid` | `@grtjgcjjgid` | `varchar(max)` | `DbType.AnsiString` |
+| `djh.sfxmddid` | `@sfxmddid` | `varchar(max)` | `DbType.AnsiString` |
 
-## Strong evidence and limits
+The real read-only integration test loads the `xmtm` definition, converts its two placeholders, executes the configured SQL, and checks the sanitized `Master` table shape. The fixture and tests contain no request values or patient rows.
 
-The current database provider is intentionally configured around a SQL Server `SqlCommand`. This supports normal named ADO.NET parameters after `ILegacyQueryParameterBinder` resolves values from the preserved payload. It does **not** prove the historical service used that syntax exclusively. In particular, a FastReport template may have applied its own expression rules after query execution; that behavior cannot be inferred from table names.
+## Safety constraints
 
-No legacy renderer DLL, FastReport package installation, FRX template, or database connection was available on the development workstation. Consequently, this repository contains no reverse-engineered claim about undocumented placeholder processing.
+The binder is intentionally isolated in `ILegacyQueryParameterBinder`. It is responsible for token syntax and parameter values; `SqlServerReportDataProvider` remains responsible for command execution and data-set materialization. A bracketed token is changed only when the preserved payload supplies a same-named scalar. Other bracketed SQL remains untouched, avoiding a broad string-replacement rule.
 
-## Evidence collection procedure
+## Required next evidence
 
-Use an explicitly approved read-only account. First run `tools/sql/inspect-legacy-report-schema.sql` in SSMS or `PEIS.LegacyDbInspector inspect-schema` to record actual columns, keys, rowversion/update columns, and table presence. Then run `inspect-report` for one approved **non-patient report-definition identifier** and export FRX/SQL only when the environment owner authorizes the destination.
-
-For each approved sample, retain outside source control: the sanitized original request JSON; the selected table and key path; SQL placeholder tokens; the parameter name, JSON type, and outcome; and the returned `DataSet` table/column shape. Convert only table names, column names, and minimum row counts into the JSON form defined by `tests/Fixtures/LegacyReal/DataSetShape.schema.json`.
-
-## Decision gate
-
-Do not add compatibility transformations, SQL string substitution, or FastReport-specific parameter handling until a sanitized real fixture identifies the required rule and an integration test demonstrates it against a read-only database. Until then, unsupported syntax must remain **UNVERIFIED**, not silently emulated.
+A valid `cxid` request, a valid direct `djid` request, and an old-service DLL or approved publish package remain necessary before expanding resolver precedence or adding `${...}`/Regex behavior. Until that evidence is collected, the Real Legacy Compatibility Gate remains **NOT VERIFIED** rather than PASS.
