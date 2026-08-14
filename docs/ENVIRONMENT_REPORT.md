@@ -1,6 +1,6 @@
 # Environment Report
 
-**Generated:** 2026-08-14  
+**Generated:** 2026-08-14
 **Scope:** Local development workstation baseline; no hardware printing was performed.
 
 ## Available
