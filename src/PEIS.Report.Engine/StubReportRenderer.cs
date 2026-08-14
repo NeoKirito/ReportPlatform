@@ -5,23 +5,79 @@ using PEIS.Report.Contracts;
 namespace PEIS.Report.Engine;
 
 /// <summary>
-/// Development-only renderer. Replace with FastReportReportRenderer when the licensed
-/// FastReport package/reference and the production FRX/database schema are wired in.
+/// Deterministic renderer for CI, local development, and environments without a licensed FastReport reference.
+/// It deliberately traverses the same definition/template/data/cache/telemetry/concurrency boundaries as the
+/// production adapter while making no claim of FastReport or FRX fidelity.
 /// </summary>
-public sealed class StubReportRenderer : IReportRenderer
+public sealed class StubReportRenderer(
+    ReportDefinitionCache definitionCache,
+    IReportDefinitionProvider definitions,
+    ITemplateProvider templates,
+    IReportDataProvider data,
+    RenderConcurrencyGate renderGate,
+    IReportRenderTelemetry telemetry) : IReportRenderer
 {
-    public Task<ReportRenderResult> RenderPdfAsync(ReportRenderRequest request, CancellationToken cancellationToken)
+    public async Task<ReportRenderResult> RenderPdfAsync(ReportRenderRequest request, CancellationToken cancellationToken)
     {
-        var sw = Stopwatch.StartNew();
-        var pdf = MinimalPdf($"PEIS Report Platform\nReportId: {request.ReportId}\nStub renderer - replace with FastReport adapter.");
-        sw.Stop();
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ReportId);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(new ReportRenderResult(
+        var metrics = new ReportRenderMetrics
+        {
+            RequestId = Guid.NewGuid().ToString("N"),
+            ReportId = request.ReportId,
+            Profile = PdfExportProfile.Normalize(request.Profile)
+        };
+
+        var beforeCache = definitionCache.Snapshot();
+        var definition = await metrics.MeasureAsync("DefinitionLoad", () =>
+            definitionCache.GetOrCreateAsync(request.ReportId, token => definitions.GetRequiredAsync(request, token), cancellationToken));
+        var afterCache = definitionCache.Snapshot();
+        metrics.DefinitionCacheHit = afterCache.Hits > beforeCache.Hits;
+
+        var template = await metrics.MeasureAsync("TemplateLoad", () => templates.GetRequiredAsync(definition, cancellationToken));
+        var reportData = await metrics.MeasureAsync("SqlQuery", () => data.QueryAsync(definition, request.Parameters, cancellationToken));
+        metrics.Rows = reportData.RowCount;
+        await metrics.MeasureAsync("ImageDiscovery", () => Task.CompletedTask);
+        await metrics.MeasureAsync("ImageResolve", () => Task.CompletedTask);
+
+        byte[] pdf;
+        using (await renderGate.EnterAsync(cancellationToken))
+        {
+            await metrics.MeasureAsync("FrxLoad", () => Task.CompletedTask);
+            await metrics.MeasureAsync("RegisterData", () => Task.CompletedTask);
+            await metrics.MeasureAsync("Prepare", () => Task.CompletedTask);
+            await metrics.MeasureAsync("Watermark", () => Task.CompletedTask);
+            pdf = await metrics.MeasureAsync("PdfExport", () => Task.FromResult(MinimalPdf(BuildStubText(request, definition, template, reportData))));
+        }
+
+        metrics.Pages = 1;
+        metrics.PdfBytes = pdf.LongLength;
+        await metrics.MeasureAsync("ArtifactWrite", () => Task.CompletedTask);
+        var observation = metrics.Complete();
+        telemetry.Record(observation);
+
+        return new ReportRenderResult(
             pdf,
-            request.FileName ?? $"{request.ReportId}.pdf",
+            PdfExportProfile.FileName(request.FileName, request.ReportId),
             1,
-            [new ReportStageTiming("StubRender", sw.ElapsedMilliseconds)]));
+            observation.Timings);
     }
+
+    private static string BuildStubText(
+        ReportRenderRequest request,
+        ReportDefinition definition,
+        ReportTemplate template,
+        ReportDataSet reportData)
+        => string.Join('\n',
+            "PEIS Report Platform",
+            $"ReportId: {request.ReportId}",
+            $"Profile: {PdfExportProfile.Normalize(request.Profile)}",
+            $"Definition: {definition.Source}/{definition.Version}",
+            $"Template: {template.TemplateKey}/{template.ContentHash[..12]}",
+            $"Rows: {reportData.RowCount}",
+            "Deterministic renderer - FastReport integration is not verified.");
 
     private static byte[] MinimalPdf(string text)
     {

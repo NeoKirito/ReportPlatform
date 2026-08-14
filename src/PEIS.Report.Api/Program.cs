@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using PEIS.Report.Api.Compatibility;
 using PEIS.Report.Api.Hubs;
 using PEIS.Report.Api.Printing;
@@ -10,14 +11,28 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 builder.Services.Configure<PrintRoutingOptions>(builder.Configuration.GetSection("PrintRouting"));
+builder.Services.Configure<RenderConcurrencyOptions>(builder.Configuration.GetSection("Rendering"));
+builder.Services.Configure<ImageResolutionOptions>(builder.Configuration.GetSection("ImageResolution"));
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = builder.Environment.IsDevelopment();
 });
 builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddSingleton<PrintJobStateStore>();
+builder.Services.AddSingleton<PrintRequestIdempotencyStore>();
 builder.Services.AddSingleton<PrintScenarioCatalog>();
 builder.Services.AddSingleton<IPdfArtifactStore, LocalPdfArtifactStore>();
+builder.Services.AddSingleton<ReportDefinitionCache>();
+builder.Services.AddSingleton<IReportDefinitionProvider, DeterministicReportDefinitionProvider>();
+builder.Services.AddSingleton<ITemplateProvider, DeterministicTemplateProvider>();
+builder.Services.AddSingleton<IReportDataProvider, EmptyReportDataProvider>();
+builder.Services.AddSingleton<InMemoryReportRenderTelemetry>();
+builder.Services.AddSingleton<IReportRenderTelemetry>(sp => sp.GetRequiredService<InMemoryReportRenderTelemetry>());
+builder.Services.AddSingleton(sp => new RenderConcurrencyGate(sp.GetRequiredService<IOptions<RenderConcurrencyOptions>>().Value));
+builder.Services.AddHttpClient("report-images");
+builder.Services.AddSingleton<IImageResolver>(sp => new ImageResolver(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-images"),
+    sp.GetRequiredService<IOptions<ImageResolutionOptions>>().Value));
 builder.Services.AddSingleton<IReportRenderer, StubReportRenderer>();
 builder.Services.AddSingleton<LegacyReportRequestAdapter>();
 builder.Services.AddSingleton<PrintJobCoordinator>();
@@ -29,6 +44,15 @@ app.UseStaticFiles();
 app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "PEIS.Report.Api" }));
+app.MapGet("/internal/diagnostics/rendering", (
+    ReportDefinitionCache definitions,
+    RenderConcurrencyGate gate,
+    InMemoryReportRenderTelemetry telemetry) => Results.Ok(new
+{
+    definitionCache = definitions.Snapshot(),
+    renderConcurrency = gate.Snapshot(),
+    recentRenders = telemetry.Snapshot()
+}));
 
 // New typed endpoint retained for diagnostics/new integrations only. Existing PEIS callers
 // should continue to use POST /api/Reports/GetReportByJson with their original JSON body.
