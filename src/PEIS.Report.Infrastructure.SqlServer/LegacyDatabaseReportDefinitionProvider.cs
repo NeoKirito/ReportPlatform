@@ -29,6 +29,10 @@ public sealed class LegacyReportSchemaMapping
     public string SqlColumn { get; set; } = "bb_sql";
     public string? VersionColumn { get; set; }
     public string? UpdatedAtColumn { get; set; }
+    /// <summary>Raw means template text is stored directly; Base64Utf8 means the database field stores Base64-encoded UTF-8 FRX XML.</summary>
+    public string TemplateContentEncoding { get; set; } = "Raw";
+    /// <summary>Optional evidence-backed DataTable name required by the FRX for the first SQL result set.</summary>
+    public string? FirstResultSetTableName { get; set; }
     public string TemplateKeyPrefix { get; set; } = "legacy-db";
 
     public void Validate()
@@ -39,6 +43,8 @@ public sealed class LegacyReportSchemaMapping
         ValidateIdentifier(SqlColumn, nameof(SqlColumn));
         if (!string.IsNullOrWhiteSpace(VersionColumn)) ValidateIdentifier(VersionColumn, nameof(VersionColumn));
         if (!string.IsNullOrWhiteSpace(UpdatedAtColumn)) ValidateIdentifier(UpdatedAtColumn, nameof(UpdatedAtColumn));
+        if (!string.Equals(TemplateContentEncoding, "Raw", StringComparison.OrdinalIgnoreCase) && !string.Equals(TemplateContentEncoding, "Base64Utf8", StringComparison.OrdinalIgnoreCase))
+            throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.SchemaMappingUnverified, "Legacy schema mapping option 'TemplateContentEncoding' must be Raw or Base64Utf8.");
     }
 
     private static void ValidateIdentifier(string value, string optionName)
@@ -54,15 +60,18 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
 {
     private readonly ReportDatabaseOptions _database;
     private readonly LegacyReportSchemaMapping _schema;
+    private readonly ILegacyReportResolver _resolver;
     private readonly TimeProvider _clock;
 
     public LegacyDatabaseReportDefinitionProvider(
         IOptions<ReportDatabaseOptions> database,
         IOptions<LegacyReportSchemaMapping> schema,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        ILegacyReportResolver? resolver = null)
     {
         _database = database.Value;
         _schema = schema.Value;
+        _resolver = resolver ?? new LegacyPayloadReportResolver();
         _clock = clock ?? TimeProvider.System;
         _schema.Validate();
     }
@@ -70,6 +79,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
     public async Task<ReportDefinitionVersion> GetVersionAsync(ReportRenderRequest request, CancellationToken cancellationToken)
     {
         EnsureConfigured();
+        var resolution = _resolver.Resolve(request);
         var selected = VersionExpression();
         if (selected is null)
         {
@@ -86,10 +96,10 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
             await using var command = connection.CreateCommand();
             command.CommandTimeout = TimeoutSeconds();
             command.CommandText = $"SELECT {selected} FROM {_schema.DefinitionTable} WHERE {_schema.ReportIdColumn} = @reportId";
-            command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = request.ReportId });
+            command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = resolution.DefinitionId });
             var scalar = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (scalar is null || scalar is DBNull)
-                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.ReportNotFound, $"Legacy report definition '{request.ReportId}' was not found.");
+                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.ReportNotFound, $"Legacy report definition '{resolution.DefinitionId}' was not found.");
             return new ReportDefinitionVersion(Convert.ToString(scalar, System.Globalization.CultureInfo.InvariantCulture)!, true, null, selected);
         }
         catch (LegacyReportDatabaseException)
@@ -109,6 +119,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
     public async Task<ReportDefinition> GetRequiredAsync(ReportRenderRequest request, CancellationToken cancellationToken)
     {
         EnsureConfigured();
+        var resolution = _resolver.Resolve(request);
         try
         {
             await using var connection = new SqlConnection(_database.ConnectionString);
@@ -116,10 +127,10 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
             await using var command = connection.CreateCommand();
             command.CommandTimeout = TimeoutSeconds();
             command.CommandText = BuildDefinitionQuery();
-            command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = request.ReportId });
+            command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = resolution.DefinitionId });
             await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.ReportNotFound, $"Legacy report definition '{request.ReportId}' was not found.");
+                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.ReportNotFound, $"Legacy report definition '{resolution.DefinitionId}' was not found.");
 
             var template = reader.GetString(1);
             if (string.IsNullOrWhiteSpace(template))
@@ -135,12 +146,15 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["schemaMapping"] = _schema.DefinitionTable,
-                ["identifierSource"] = request.LegacyPayload is null ? "typed-request" : "legacy-payload-preserved"
+                ["identifierSource"] = resolution.IdentifierSource,
+                ["templateContentEncoding"] = _schema.TemplateContentEncoding
             };
+            if (!string.IsNullOrWhiteSpace(_schema.FirstResultSetTableName))
+                metadata["resultSet:0:tableName"] = _schema.FirstResultSetTableName;
             return new ReportDefinition(
-                request.ReportId,
+                resolution.DefinitionId,
                 version,
-                $"{_schema.TemplateKeyPrefix}:{request.ReportId}",
+                $"{_schema.TemplateKeyPrefix}:{resolution.DefinitionId}",
                 sql,
                 metadata,
                 updatedAt,
@@ -192,6 +206,17 @@ public sealed class LegacyDatabaseTemplateProvider : ITemplateProvider
             throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.TemplateNotFound, $"Report '{definition.ReportId}' did not include database FRX content.");
 
         var content = definition.TemplateContent;
+        if (definition.ParameterMetadata.TryGetValue("templateContentEncoding", out var encoding) && string.Equals(encoding, "Base64Utf8", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                content = Encoding.UTF8.GetString(Convert.FromBase64String(content));
+            }
+            catch (FormatException exception)
+            {
+                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.TemplateNotFound, $"Report '{definition.ReportId}' declares Base64Utf8 template storage but its FRX field is not valid Base64.", exception);
+            }
+        }
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
         return Task.FromResult(new ReportTemplate(definition.TemplateKey, definition.Version, content, hash));
     }
