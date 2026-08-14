@@ -309,6 +309,15 @@ internal sealed class DataSetShapeFixture
             {
                 Assert.True(actualTable.Columns.Contains(expectedColumn), $"Expected column '{expectedColumn}' was not found in table '{table.Name}'.");
             }
+            if (table.ColumnTypes is not null)
+            {
+                foreach (var (columnName, expectedType) in table.ColumnTypes)
+                {
+                    Assert.True(actualTable.Columns.Contains(columnName), $"Expected typed column '{columnName}' was not found in table '{table.Name}'.");
+                    var actualType = actualTable.Columns[columnName]!.DataType.FullName;
+                    Assert.Equal(expectedType, actualType);
+                }
+            }
         }
     }
 }
@@ -318,4 +327,5 @@ internal sealed class ExpectedTableShape
     public required string Name { get; init; }
     public int MinimumRows { get; init; }
     public required IReadOnlyList<string> Columns { get; init; }
+    public IReadOnlyDictionary<string, string>? ColumnTypes { get; init; }
 }

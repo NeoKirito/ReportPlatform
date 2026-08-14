@@ -2,7 +2,7 @@
   "tables": [
     {
       "name": "Master",
-      "minimumRows": 0,
+      "minimumRows": 1,
       "columns": [
         "xm",
         "nl",
@@ -11,7 +11,16 @@
         "XMMC",
         "xb",
         "flmc"
-      ]
+      ],
+      "columnTypes": {
+        "xm": "System.String",
+        "nl": "System.Int32",
+        "tmh": "System.String",
+        "zxksmc": "System.String",
+        "XMMC": "System.String",
+        "xb": "System.String",
+        "flmc": "System.String"
+      }
     }
   ]
 }

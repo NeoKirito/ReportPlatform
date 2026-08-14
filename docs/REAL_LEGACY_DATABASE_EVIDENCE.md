@@ -13,6 +13,7 @@
 | FRX storage | **CONFIRMED** | `dj_frx` is nullable `varchar(max)` and the observed field is Base64-encoded UTF-8 FRX XML. | `schema/schema.md`; `frx/djid-xmtm-structure.json` |
 | SQL storage | **CONFIRMED** | `djsql` is nullable SQL `text`; the observed field contains the database-owned query definition. | `schema/schema.md`; `definitions/djid-xmtm.json` |
 | Version field | **CONFIRMED absent for this table** | The observed 14-column table has no rowversion/timestamp, update-time, or explicit version field. Cache refresh therefore requires the documented TTL fallback until another reliable source is evidenced. | `schema/schema.md` |
+| Non-empty `Master` contract | **CONFIRMED at data-provider boundary** | 16 user-approved read-only samples each returned one row with an identical seven-column CLR schema; no values or request identifiers were exported. | Ignored `.runtime/private-legacy-evidence/approved-master-sample-scan.json`; committed shape-only fixture |
 
 ## Confirmed `djwh` mapping
 
@@ -47,9 +48,9 @@ The legacy POST request supplied for this gate uses `querytype=djwh` and `bbid=x
 | ID family | Status | Evidence-backed conclusion |
 |---|---|---|
 | `bbid` with `querytype=djwh` | **CONFIRMED** | The supplied old request succeeds for `bbid=xmtm`; the compatible resolver maps that payload form to `dbo.xt_bgdy_djwh_zzj.djid`. |
-| `djid` only | **PARTIAL** | The supplied `djid=xmtm` variant returns old API JSON rather than a PDF. Its error is parameter/query related, so this does not prove a direct `djid` lookup rule. |
-| `cxid` | **UNVERIFIED** | No approved valid `cxid` request or source mapping has been supplied. |
-| Multiple IDs | **UNVERIFIED** | A conflicting `bbid`/`djid` probe returned JSON instead of PDF, but it does not isolate precedence because the selected unknown `bbid` has no definition. |
+| `djid` only | **PARTIAL** | The controlled `djid=xmtm` variant returns old API JSON rather than a PDF. Its GBK-decoded message identifies an ambiguous `grtjgcjjgid` column, which is a downstream SQL ambiguity and does not prove a direct public lookup rule. The no-`querytype` and `querytype=djid` variants also return the same non-PDF response class. |
+| `cxid` | **OUT OF CURRENT PRODUCTION CONTRACT** | A read-only system-catalog query found zero exact `cxid` object or column names. The broader `cx` matches are examination-item objects, not report-definition objects. |
+| Multiple IDs | **CONFIRMED for `querytype=djwh` + `bbid` only** | A controlled request with valid `bbid=xmtm` and an additional unknown `djid` continues to return a PDF. This confirms `bbid` selection precedence within the observed `djwh` family only; it does not claim a global rule. |
 
 ## Cache implication
 
@@ -57,4 +58,4 @@ The sample table has no observed `rowversion`, `timestamp`, update-time, or vers
 
 ## Remaining evidence required
 
-The Real Legacy Compatibility Gate is **not yet PASS**. To complete it, provide an approved valid fixture for each additional ID family required in production, especially `cxid`, and a valid request that yields at least one `Master` row. That is required to decide whether the observed `XMMC` result column and the FRX reference `Master.xmmc` are compatible under the deployed FastReport version.
+The Real Legacy Compatibility Gate is **not yet PASS**. To complete it, provide an approved valid direct-`djid` PDF fixture if that route is required in production and a licensed FastReport runtime. A historical `cxid` request or implementation artifact is needed only if `cxid` must be restored beyond the current production contract. The non-empty `Master` data-provider boundary is now confirmed; the remaining renderer-specific questions require the licensed FastReport runtime.

@@ -34,6 +34,14 @@
               "minLength": 1
             },
             "description": "Column names only. Never include values or inferred patient data."
+          },
+          "columnTypes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Optional column-name to CLR type mapping, such as System.String. Never include values or inferred patient data."
           }
         }
       }

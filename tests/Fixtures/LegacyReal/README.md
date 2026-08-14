@@ -6,7 +6,7 @@ This directory establishes the **boundary** for evidence collected from a real l
 
 ## Allowed committed files
 
-`DataSetShape.schema.json` defines the permitted shape-only fixture format. A future sanitized fixture may contain only a returned `DataTable` name, its column names, and a minimum row count. It must contain no values or SQL.
+`DataSetShape.schema.json` defines the permitted shape-only fixture format. A future sanitized fixture may contain only a returned `DataTable` name, its column names, optional CLR column types, and a minimum row count. It must contain no values or SQL.
 
 ## Ignored real evidence
 
@@ -26,4 +26,4 @@ To exercise a report definition, set `REPORTPLATFORM_TEST_REPORT_ID` to an appro
 
 ## Approved shape-only fixture
 
-`expected-shapes/djid-xmtm.shape.json` is a reviewed non-sensitive contract collected from the approved `xmtm` `djwh` definition. It contains only the `Master` table name, observed column names, and `minimumRows: 0`; it contains no row values, report request values, FRX, SQL, connection material, or patient identifiers. Use it with `REPORTPLATFORM_TEST_DATASET_SHAPE` together with an explicitly approved process-local legacy payload.
+`expected-shapes/djid-xmtm.shape.json` is a reviewed non-sensitive contract collected from the approved `xmtm` `djwh` definition. It contains only the `Master` table name, observed column names, observed CLR column types, and `minimumRows: 1`; it contains no row values, report request values, FRX, SQL, connection material, or patient identifiers. The non-empty boundary was confirmed through 16 user-approved read-only samples sharing one identical seven-column schema. Use it with `REPORTPLATFORM_TEST_DATASET_SHAPE` together with an explicitly approved process-local legacy payload.
