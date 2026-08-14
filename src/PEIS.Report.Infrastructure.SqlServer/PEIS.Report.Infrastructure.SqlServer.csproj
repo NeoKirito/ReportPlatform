@@ -6,5 +6,6 @@
     <ProjectReference Include="..\PEIS.Report.Contracts\PEIS.Report.Contracts.csproj" />
     <ProjectReference Include="..\PEIS.Report.Engine\PEIS.Report.Engine.csproj" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
   </ItemGroup>
 </Project>

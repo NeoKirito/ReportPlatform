@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using PEIS.PrintAgent;
 using PEIS.PrintAgent.Printing;
 using PEIS.PrintAgent.Services;

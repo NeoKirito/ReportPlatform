@@ -1,3 +1,6 @@
+using System.Net.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Options;
 using PEIS.PrintAgent.Printing;

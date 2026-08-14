@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 namespace PEIS.PrintAgent.Printing;
 
 public sealed class DryRunPrintBackend(ILogger<DryRunPrintBackend> logger) : IPrintBackend

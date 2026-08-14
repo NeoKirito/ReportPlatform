@@ -131,7 +131,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
             var version = reader.IsDBNull(3)
                 ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(template + "\n" + sql)))
                 : Convert.ToString(reader.GetValue(3), System.Globalization.CultureInfo.InvariantCulture)!;
-            var updatedAt = reader.IsDBNull(4) ? _clock.GetUtcNow() : Convert.ToDateTime(reader.GetValue(4), System.Globalization.CultureInfo.InvariantCulture);
+            var updatedAt = reader.IsDBNull(4) ? _clock.GetUtcNow() : new DateTimeOffset(DateTime.SpecifyKind(Convert.ToDateTime(reader.GetValue(4), System.Globalization.CultureInfo.InvariantCulture), DateTimeKind.Utc));
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["schemaMapping"] = _schema.DefinitionTable,
@@ -143,7 +143,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
                 $"{_schema.TemplateKeyPrefix}:{request.ReportId}",
                 sql,
                 metadata,
-                new DateTimeOffset(DateTime.SpecifyKind(updatedAt, DateTimeKind.Utc)),
+                updatedAt,
                 "legacy-sql-server",
                 template);
         }
