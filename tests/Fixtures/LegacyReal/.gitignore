@@ -1,0 +1,7 @@
+# Default deny: real legacy evidence must not enter source control.
+*
+
+# Keep only safe, reviewed metadata and guidance.
+!.gitignore
+!README.md
+!DataSetShape.schema.json
