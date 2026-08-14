@@ -1,10 +1,10 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\PEIS.Report.Contracts\PEIS.Report.Contracts.csproj" />
     <ProjectReference Include="..\PEIS.Report.Engine\PEIS.Report.Engine.csproj" />
-    <ProjectReference Include="..\PEIS.Report.Infrastructure.SqlServer\PEIS.Report.Infrastructure.SqlServer.csproj" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
   </ItemGroup>
 </Project>

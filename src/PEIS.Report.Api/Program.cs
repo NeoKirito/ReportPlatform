@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using PEIS.Report.Api.Compatibility;
+using PEIS.Report.Infrastructure.SqlServer;
 using PEIS.Report.Api.Hubs;
 using PEIS.Report.Api.Printing;
 using PEIS.Report.Api.Storage;
@@ -13,6 +14,9 @@ builder.Services.AddControllers();
 builder.Services.Configure<PrintRoutingOptions>(builder.Configuration.GetSection("PrintRouting"));
 builder.Services.Configure<RenderConcurrencyOptions>(builder.Configuration.GetSection("Rendering"));
 builder.Services.Configure<ImageResolutionOptions>(builder.Configuration.GetSection("ImageResolution"));
+builder.Services.Configure<ReportEngineOptions>(builder.Configuration.GetSection("ReportEngine"));
+builder.Services.Configure<ReportDatabaseOptions>(builder.Configuration.GetSection("ReportDatabase"));
+builder.Services.Configure<LegacyReportSchemaMapping>(builder.Configuration.GetSection("LegacyReportSchema"));
 builder.Services.AddSignalR(options =>
 {
     options.EnableDetailedErrors = builder.Environment.IsDevelopment();
@@ -23,9 +27,22 @@ builder.Services.AddSingleton<PrintRequestIdempotencyStore>();
 builder.Services.AddSingleton<PrintScenarioCatalog>();
 builder.Services.AddSingleton<IPdfArtifactStore, LocalPdfArtifactStore>();
 builder.Services.AddSingleton<ReportDefinitionCache>();
-builder.Services.AddSingleton<IReportDefinitionProvider, DeterministicReportDefinitionProvider>();
-builder.Services.AddSingleton<ITemplateProvider, DeterministicTemplateProvider>();
-builder.Services.AddSingleton<IReportDataProvider, EmptyReportDataProvider>();
+var definitionSource = builder.Configuration.GetValue<string>("ReportEngine:DefinitionSource") ?? "Deterministic";
+if (string.Equals(definitionSource, "LegacySqlServer", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddSingleton<LegacyDatabaseReportDefinitionProvider>();
+    builder.Services.AddSingleton<IReportDefinitionProvider>(sp => sp.GetRequiredService<LegacyDatabaseReportDefinitionProvider>());
+    builder.Services.AddSingleton<IReportDefinitionVersionProvider>(sp => sp.GetRequiredService<LegacyDatabaseReportDefinitionProvider>());
+    builder.Services.AddSingleton<ITemplateProvider, LegacyDatabaseTemplateProvider>();
+    builder.Services.AddSingleton<ILegacyQueryParameterBinder, AdoNetLegacyQueryParameterBinder>();
+    builder.Services.AddSingleton<IReportDataProvider, SqlServerReportDataProvider>();
+}
+else
+{
+    builder.Services.AddSingleton<IReportDefinitionProvider, DeterministicReportDefinitionProvider>();
+    builder.Services.AddSingleton<ITemplateProvider, DeterministicTemplateProvider>();
+    builder.Services.AddSingleton<IReportDataProvider, EmptyReportDataProvider>();
+}
 builder.Services.AddSingleton<InMemoryReportRenderTelemetry>();
 builder.Services.AddSingleton<IReportRenderTelemetry>(sp => sp.GetRequiredService<InMemoryReportRenderTelemetry>());
 builder.Services.AddSingleton(sp => new RenderConcurrencyGate(sp.GetRequiredService<IOptions<RenderConcurrencyOptions>>().Value));
@@ -47,12 +64,19 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "PEIS.Repo
 app.MapGet("/internal/diagnostics/rendering", (
     ReportDefinitionCache definitions,
     RenderConcurrencyGate gate,
-    InMemoryReportRenderTelemetry telemetry) => Results.Ok(new
+    InMemoryReportRenderTelemetry telemetry,
+    IOptions<ReportEngineOptions> engineOptions) => Results.Ok(new
 {
+    definitionSource = engineOptions.Value.DefinitionSource,
     definitionCache = definitions.Snapshot(),
     renderConcurrency = gate.Snapshot(),
     recentRenders = telemetry.Snapshot()
 }));
+app.MapPost("/internal/cache/reports/{reportId}/invalidate", (string reportId, ReportDefinitionCache definitions) =>
+{
+    var removed = definitions.InvalidateReport(reportId);
+    return Results.Ok(new { reportId, removed });
+});
 
 // New typed endpoint retained for diagnostics/new integrations only. Existing PEIS callers
 // should continue to use POST /api/Reports/GetReportByJson with their original JSON body.
