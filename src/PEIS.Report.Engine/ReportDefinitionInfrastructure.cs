@@ -16,11 +16,13 @@ public sealed record ReportDefinition(
     string? SqlText,
     IReadOnlyDictionary<string, string> ParameterMetadata,
     DateTimeOffset UpdatedAt,
-    string Source);
+    string Source,
+    string? TemplateContent = null);
 
 public sealed record ReportTemplate(string TemplateKey, string Version, string Content, string ContentHash);
 
-public sealed record ReportDataSet(IReadOnlyDictionary<string, DataTable> Tables, int RowCount);
+/// <summary>DataSet and table metadata passed to the renderer; table names are part of the FRX compatibility contract.</summary>
+public sealed record ReportDataSet(IReadOnlyDictionary<string, DataTable> Tables, int RowCount, DataSet? DataSet = null);
 
 public interface IReportDefinitionProvider
 {
@@ -34,9 +36,10 @@ public interface ITemplateProvider
 
 public interface IReportDataProvider
 {
+    /// <summary>Receives the complete request so database binding can use the untouched LegacyPayload.</summary>
     Task<ReportDataSet> QueryAsync(
         ReportDefinition definition,
-        IReadOnlyDictionary<string, JsonElement> parameters,
+        ReportRenderRequest request,
         CancellationToken cancellationToken);
 }
 
@@ -75,7 +78,30 @@ public sealed class ReportDefinitionCache
         }
     }
 
-    public bool Invalidate(string reportId) => _entries.TryRemove(reportId, out _);
+    public bool Invalidate(string cacheKey) => _entries.TryRemove(cacheKey, out _);
+
+    /// <summary>Removes every versioned entry for one logical report without touching other report definitions.</summary>
+    public int InvalidateReport(string reportId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reportId);
+        var prefix = NormalizeReportId(reportId) + "|";
+        var removed = 0;
+        foreach (var key in _entries.Keys.Where(key => key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (_entries.TryRemove(key, out _))
+                removed++;
+        }
+        return removed;
+    }
+
+    public static string BuildCacheKey(string reportId, ReportDefinitionVersion version)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reportId);
+        ArgumentNullException.ThrowIfNull(version);
+        return $"{NormalizeReportId(reportId)}|{version.CacheToken}";
+    }
+
+    private static string NormalizeReportId(string reportId) => reportId.Trim().ToUpperInvariant();
 
     public ReportDefinitionCacheSnapshot Snapshot() => new(
         Interlocked.Read(ref _hits),
@@ -124,10 +150,10 @@ public sealed class EmptyReportDataProvider : IReportDataProvider
 {
     public Task<ReportDataSet> QueryAsync(
         ReportDefinition definition,
-        IReadOnlyDictionary<string, JsonElement> parameters,
+        ReportRenderRequest request,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new ReportDataSet(new Dictionary<string, DataTable>(), 0));
+        return Task.FromResult(new ReportDataSet(new Dictionary<string, DataTable>(), 0, new DataSet("DeterministicReportData")));
     }
 }

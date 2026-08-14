@@ -53,13 +53,20 @@ public sealed class FastReportReportRenderer(
             Profile = PdfExportProfile.Normalize(request.Profile)
         };
 
+        var cacheKey = request.ReportId;
+        if (definitions is IReportDefinitionVersionProvider versionProvider)
+        {
+            var version = await metrics.MeasureAsync("DefinitionVersionCheck", () => versionProvider.GetVersionAsync(request, cancellationToken));
+            cacheKey = ReportDefinitionCache.BuildCacheKey(request.ReportId, version);
+        }
         var beforeCache = definitionCache.Snapshot();
         var definition = await metrics.MeasureAsync("DefinitionLoad", () =>
-            definitionCache.GetOrCreateAsync(request.ReportId, token => definitions.GetRequiredAsync(request, token), cancellationToken));
+            definitionCache.GetOrCreateAsync(cacheKey, token => definitions.GetRequiredAsync(request, token), cancellationToken));
         metrics.DefinitionCacheHit = definitionCache.Snapshot().Hits > beforeCache.Hits;
         var template = await metrics.MeasureAsync("TemplateLoad", () => templates.GetRequiredAsync(definition, cancellationToken));
-        var reportData = await metrics.MeasureAsync("SqlQuery", () => data.QueryAsync(definition, request.Parameters, cancellationToken));
+        var reportData = await metrics.MeasureAsync("SqlQuery", () => data.QueryAsync(definition, request, cancellationToken));
         metrics.Rows = reportData.RowCount;
+        metrics.SqlResultSets = reportData.Tables.Count;
         await metrics.MeasureAsync("ImageDiscovery", () => Task.CompletedTask);
         await metrics.MeasureAsync("ImageResolve", () => Task.CompletedTask);
 

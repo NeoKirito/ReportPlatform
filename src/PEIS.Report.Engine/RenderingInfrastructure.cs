@@ -74,6 +74,7 @@ public sealed class ReportRenderMetrics
     public string? Profile { get; init; }
     public bool DefinitionCacheHit { get; set; }
     public int Rows { get; set; }
+    public int SqlResultSets { get; set; }
     public int ImageCount { get; set; }
     public long ImageBytes { get; set; }
     public int ImageCacheHits { get; set; }
@@ -119,6 +120,7 @@ public sealed class ReportRenderMetrics
             Profile,
             DefinitionCacheHit,
             Rows,
+            SqlResultSets,
             ImageCount,
             ImageBytes,
             ImageCacheHits,
@@ -135,6 +137,7 @@ public sealed record ReportRenderObservation(
     string? Profile,
     bool DefinitionCacheHit,
     int Rows,
+    int SqlResultSets,
     int ImageCount,
     long ImageBytes,
     int ImageCacheHits,
