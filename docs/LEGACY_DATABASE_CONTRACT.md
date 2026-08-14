@@ -1,70 +1,71 @@
-# Legacy Database Report Contract
+# Legacy database contract and evidence gate
 
-This document separates known development evidence from unverified legacy database behavior. Database configuration remains the intended production source of truth; filesystem FRX files are restricted to fixtures, diagnostics, or development fallback work.
+## Contract status
 
-## Evidence status
+The legacy report database is the **production source of truth**. The current SQL Server provider is production-oriented infrastructure with configurable mapping; it is not a declaration that the candidate `xt_*` schema is confirmed. All items below remain **UNVERIFIED** unless marked by evidence collected from an approved read-only connection.
 
-No database connection, schema export, current old-service source, representative FRX, or sanitized production request fixture has been supplied in this environment. Consequently, no table relationship or field meaning below is claimed as production-confirmed.
+| Candidate artifact | Current assumption | Required confirmation |
+|---|---|---|
+| `xt_bbdy` | Candidate report-definition table; default ID column `bbid`. | Actual columns, key, template field, SQL field, and lookup rule. |
+| `xt_djwh` | Candidate registration/guide-sheet definition table with `djid`. | Whether it maps directly to a report or resolves through a relationship. |
+| `xt_cxdy` | Candidate query-definition table with `cxid`. | SQL ownership, parameter syntax, and report-selection role. |
+| `xt_bgdy_djwh_zzj` | Candidate association table. | Foreign keys and selection precedence. |
+| `bb_frx` / `bb_sql` | Candidate FRX and SQL columns. | Exact names, data types, nullability, encoding, and contents for a sanitized sample. |
+| rowversion/update time | Candidate cache-version signal. | A usable column and its update behavior after an approved definition change. |
 
-| Table | Known from supplied task context | Expected role | Unknown / UNVERIFIED |
-|---|---|---|---|
-| `xt_bbdy` | Name is known; concepts such as `bb_frx` have been mentioned | Candidate report-definition source containing report identity, FRX, SQL, and metadata | Primary key, actual SQL column, version field, update timestamp, encoding, and whether one record maps to multiple data sets |
-| `xt_djwh` | Name is known; concepts such as `djsql` and `dj_frx` have been mentioned | Candidate registration/guide-sheet definition source | Identifier semantics, relationship to `bbid`, query/template field types, and versioning mechanism |
-| `xt_cxdy` | Name is known | Candidate query-definition source | Key, SQL field, parameter metadata, and whether it is selected by `cxid` directly or via another table |
-| `xt_bgdy_djwh_zzj` | Name is known | Candidate relationship/association table between a report and registration/guide definitions | Both foreign keys, cardinality, ordering semantics, and whether it participates in production resolution |
+## Configure the production provider only after evidence collection
 
-## Report ID resolution
-
-The compatibility API still preserves the complete JSON object in `LegacyPayload`. The current adapter recognises candidate names `bbid`, `djid`, `cxid`, and `reportId` case-insensitively only to supply an engine identifier. The following points are **UNVERIFIED** and must be proven by old-service behavior or fixtures before production routing is enabled:
-
-| Question | Required evidence |
-|---|---|
-| Which identifier selects which table | Sanitized JSON requests and query traces or old-service source |
-| Priority if several IDs are present | Requests containing multiple IDs with corresponding legacy output |
-| String/number/case behavior | Fixtures covering each representation |
-| Relationship traversal between `xt_bbdy`, `xt_djwh`, `xt_cxdy`, and `xt_bgdy_djwh_zzj` | Schema DDL, read-only sample rows, and old-service query behavior |
-
-## Production mapping configuration
-
-`LegacySqlServer` is deliberately disabled by default. When evidence exists, configure only through deployment configuration or environment variables; do not commit a password.
+Set `ReportEngine:DefinitionSource` to `LegacySqlServer` only when the following values are confirmed by the database owner. Store connection credentials in the deployment secret store, never in `appsettings.json`, fixtures, source control, command history, or inspection output.
 
 ```json
 {
-  "ReportEngine": { "DefinitionSource": "LegacySqlServer" },
+  "ReportEngine": {
+    "DefinitionSource": "LegacySqlServer"
+  },
   "ReportDatabase": {
     "Provider": "SqlServer",
-    "ConnectionString": "",
+    "ConnectionString": "<secret:approved-read-only-legacy-report-database>",
     "CommandTimeoutSeconds": 30,
     "DefinitionCacheTtlSeconds": 300
   },
   "LegacyReportSchema": {
-    "DefinitionTable": "<confirmed table>",
-    "ReportIdColumn": "<confirmed ID column>",
-    "TemplateColumn": "<confirmed FRX column>",
-    "SqlColumn": "<confirmed SQL column>",
-    "VersionColumn": "<confirmed version column or empty>",
-    "UpdatedAtColumn": "<confirmed timestamp column or empty>"
+    "DefinitionTable": "<confirmed-table>",
+    "ReportIdColumn": "<confirmed-report-id-column>",
+    "TemplateColumn": "<confirmed-frx-column>",
+    "SqlColumn": "<confirmed-sql-column>",
+    "VersionColumn": "<confirmed-rowversion-or-version-column-or-empty>",
+    "UpdatedAtColumn": "<confirmed-updated-at-column-or-empty>",
+    "TemplateKeyPrefix": "legacy-db"
   }
 }
 ```
 
-Use `ReportDatabase__ConnectionString` to override the blank connection string. The implementation validates mapping identifiers and fails with an explicit schema-mapping error when required values remain unresolved.
+The provider validates configured identifiers before using them in a command. Report IDs and query inputs are supplied as ADO.NET parameters. The report SQL itself is database-owned definition content; do not accept it from the HTTP request.
 
-## Parameter binding contract
+## Read-only evidence procedure
 
-`ILegacyQueryParameterBinder` receives the full `ReportRenderRequest`, including `LegacyPayload`. The baseline binder uses parameterized ADO.NET `@name` tokens and binds values without SQL text substitution. It does **not** claim compatibility with `${name}`, regex-based replacement, `PrepareQuery`, or other historical syntax until a real legacy fixture identifies that behavior.
+1. Obtain written approval for a restricted read-only account and a safe, non-production or approved sanitized report-definition ID. Do not rely on automatic network discovery.
+2. Run `tools/sql/inspect-legacy-report-schema.sql` in SSMS, or run `PEIS.LegacyDbInspector inspect-schema --connection <approved-connection>`. Archive `schema.md`, `schema.json`, and `table-summary.json` outside source control when required by the environment owner.
+3. Resolve one controlled definition with `inspect-report --id <id> --id-type bbid|djid|cxid`. The default result contains only field names, types, lengths, timestamps, and SHA-256 fingerprints.
+4. Export FRX or SQL only with explicit approval using `--export-template` or `--export-sql`. Keep exported content in a secured diagnostic location; it is excluded from the `LegacyReal` fixture boundary.
+5. Configure actual mapping values, then run the opt-in integration suite using `REPORTPLATFORM_TEST_SQLSERVER=1` and `REPORT_DATABASE__CONNECTIONSTRING`. Add a shape-only JSON fixture only after sanitization.
+6. For cache evidence, arrange a separately approved configuration-only change or a controlled clone. Never use test code to mutate the live legacy system.
 
-## Cache contract
+## SQL provider behavior
 
-When a confirmed `VersionColumn` or `UpdatedAtColumn` is configured, the provider performs a lightweight version check and creates a cache key from `ReportId + version token`. When neither exists, it uses a bounded TTL token and marks the behavior as fallback/unverified. The internal invalidation endpoint accepts `POST /internal/cache/reports/{reportId}/invalidate`; it removes all versioned immutable definition entries for that report and never caches mutable `FastReport.Report`, `DataSet`, `DataTable`, or user data.
+`LegacyDatabaseReportDefinitionProvider` issues parameterized reads for definition/version metadata. `LegacyDatabaseTemplateProvider` returns FRX text embedded in the resolved definition. `SqlServerReportDataProvider` executes the resolved report SQL with `AdoNetLegacyQueryParameterBinder` and produces named `DataTable` values for the rendering boundary.
 
-## Exact artifacts required for the real integration gate
+A database timeout becomes an explicit legacy database timeout error. Connection failures, absent report records, absent FRX content, absent SQL content, and invalid/missing parameters are represented by explicit `LegacyReportDatabaseErrorCode` values. Failures are not cached as report definitions.
 
-1. A read-only SQL Server connection and connectivity instructions for the legacy report database.
-2. DDL or a precise column list for `xt_bbdy`, `xt_djwh`, `xt_cxdy`, and `xt_bgdy_djwh_zzj`, including keys and any `version`, `rowversion`, or update-time column.
-3. At least one sanitized legacy JSON request for each ID path (`bbid`, `djid`, `cxid`) and the corresponding expected definition selection.
-4. A sanitized real FRX stored in the database plus the expected data-source/table names used by that FRX.
-5. A sanitized SQL definition and representative parameter values, including any non-`@name` placeholder syntax.
-6. A fixture that demonstrates database definition/template update behavior so cache refresh can be verified.
+## Integration test gate
 
-> Until these artifacts are available, the code is an implementation of a configurable integration boundary and synthetic fixture, not proof that it matches a production PEIS schema.
+`tests/PEIS.Report.Infrastructure.SqlServer.Tests` uses discovery-time skips by default. To opt in, set:
+
+```powershell
+$env:REPORTPLATFORM_TEST_SQLSERVER = '1'
+$env:REPORT_DATABASE__CONNECTIONSTRING = '<approved-read-only-connection-string>'
+$env:REPORTPLATFORM_TEST_REPORT_ID = '<approved-non-patient-report-definition-id>'
+$env:REPORTPLATFORM_TEST_UNKNOWN_REPORT_ID = '<approved-id-known-not-to-exist>'
+```
+
+When actual columns differ from the defaults, set the corresponding `REPORTPLATFORM_TEST_*` mapping variables documented in `tests/Fixtures/LegacyReal/README.md`. The suite uses only `SELECT` operations. Database-rendering success, production PDF parity, and cache refresh following a real update remain **NOT VERIFIED** until real evidence is supplied.

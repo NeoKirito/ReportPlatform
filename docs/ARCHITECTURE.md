@@ -1,147 +1,64 @@
-# PEIS Report Platform — Architecture
+# PEIS Report Platform Architecture
 
-## Goal
+## Purpose and scope
 
-One C#/.NET report and printing platform serves PEIS desktop and PEIS B/S:
+PEIS.ReportPlatform is a report/PDF and B/S silent-printing boundary for the PEIS medical examination system. The current implementation establishes deterministic rendering seams, legacy-request preservation, SQL Server integration seams, cache invalidation, and workstation print orchestration. It does not claim a validated production FastReport render until approved real database and FRX evidence is supplied.
 
-- Input: report/template id + business parameters.
-- Output: PDF stream.
-- Keep existing FRX assets and the database-driven report-definition model.
-- Support watermarking in the production renderer.
-- B/S supports **one-click business printing without selecting printers every time**.
-- One business action may generate multiple different documents, such as an A4 guide sheet and barcode labels.
-- Each document is automatically routed to a logical printer role on the workstation.
+## Production source of truth
 
-## Core model: action -> documents -> printer roles
+> **The legacy report database is the production source of truth for report definitions, FRX template content, report SQL, version metadata, and selection relationships.**
 
-Example:
+The filesystem is **not** a production report-definition source. Local FRX files may be used only for unit tests, sanitized fixtures, diagnostics, or development experiments. A production deployment must configure `ReportEngine:DefinitionSource=LegacySqlServer` and an approved `ReportDatabase` connection; it must not silently fall back to a directory of FRX files.
 
-```text
-B/S: REGISTRATION_PRINT
-        │
-        ├── guide-sheet
-        │     ReportId: GUIDE_A4
-        │     Role:     A4_GUIDE
-        │     └──────────────> HP LaserJet (configured on REG-01)
-        │
-        └── barcode
-              ReportId: REG_BARCODE
-              Role:     BARCODE
-              └──────────────> TSC/Zebra (configured on REG-01)
-```
+| Layer | Responsibility | Production source | Non-production boundary |
+|---|---|---|---|
+| API compatibility | Preserves arbitrary legacy JSON and adapts it to `ReportRenderRequest`. | Legacy caller payload. | Sanitized JSON fixtures only. |
+| Definition provider | Resolves report identity, template content, SQL and version metadata. | Legacy SQL Server via `LegacyDatabaseReportDefinitionProvider`. | Deterministic provider for tests. |
+| Template provider | Returns database-owned FRX text and stable content hash. | Definition returned from legacy SQL Server. | In-memory/sanitized fixture content. |
+| Data provider | Executes database-owned report SQL with parameter objects. | Approved read-only SQL Server connection. | Deterministic `DataSet` only. |
+| Renderer | Converts a resolved definition and data into a PDF. | Production renderer once licensed assets and FRX fixtures are approved. | Deterministic/stub renderer. |
+| Printing | Coordinates idempotent jobs and per-printer queues. | Report API artifact URLs and approved workstations. | Dry-run backend. |
 
-PEIS business code knows only `REGISTRATION_PRINT` and `REG-01`. It does not know Windows printer names.
+## Report resolution and cache contract
 
-## Components
+`IReportDefinitionProvider` supplies an immutable `ReportDefinition`; `ITemplateProvider` supplies its immutable template content; and `IReportDataProvider` supplies a fresh data set for each render. A cache key is based on `ReportId` plus `ReportDefinitionVersion.CacheToken`. When a confirmed `VersionColumn` or `UpdatedAtColumn` is configured, the SQL provider retrieves a version token before definition reuse. The internal endpoint `POST /internal/cache/reports/{reportId}/invalidate` removes all versioned entries for the named report.
 
-```text
-PEIS Desktop ------------------------------------┐
-                                                │
-PEIS B/S -- POST /api/print/actions ------------+----> PEIS.Report.Api
-         actionCode + stationId + parameters     │          │
-                                                 │          ├─ PrintScenarioCatalog
-                                                 │          │    action -> document list
-                                                 │          │
-                                                 │          ├─ Report.Engine
-                                                 │          │    ├─ FRX/SQL/cache
-                                                 │          │    ├─ FastReport
-                                                 │          │    └─ PDF/watermark
-                                                 │          │
-                                                 │          └─ artifact(s)
-                                                 │                  │
-                                                 │               SignalR
-                                                 │                  ▼
-                                                 └--------> Windows PrintAgent
-                                                              station REG-01
-                                                               │       │
-                                                        A4_GUIDE       BARCODE
-                                                               │       │
-                                                               ▼       ▼
-                                                            A4 printer label printer
-```
+The cache never retains mutable `FastReport.Report`, `DataSet`, `DataTable`, user payloads, or a shared database connection. When no version/update column is configured, the provider uses a bounded TTL fallback. That fallback is deliberately observable but remains **UNVERIFIED** for legacy production behavior until a real schema fixture confirms it.
 
-## Why this matches the real PEIS requirement
+## Legacy SQL Server mapping
 
-The user action is not “print this PDF to several printers”. It is “perform one business print operation”.
-That operation can produce several **different** outputs:
-
-1. A4 guide sheet.
-2. Barcode labels.
-3. Later: receipt, consent form, wristband, report cover, etc.
-
-The action definition is configurable. PEIS therefore does not gain hard-coded printer logic as requirements grow.
-
-## Printer binding
-
-PrintAgent is configured once per workstation:
+The SQL Server provider is configuration-driven and validates identifiers before embedding the configured table or column names in a command. The default mapping is only a documented candidate:
 
 ```json
 {
-  "StationId": "REG-01",
-  "PrinterBindings": {
-    "A4_GUIDE": "HP LaserJet Pro M404",
-    "BARCODE": "TSC TE244"
+  "ReportDatabase": {
+    "Provider": "SqlServer",
+    "ConnectionString": "<approved-read-only-connection-string>",
+    "CommandTimeoutSeconds": 30,
+    "DefinitionCacheTtlSeconds": 300
+  },
+  "LegacyReportSchema": {
+    "DefinitionTable": "xt_bbdy",
+    "ReportIdColumn": "bbid",
+    "TemplateColumn": "bb_frx",
+    "SqlColumn": "bb_sql",
+    "VersionColumn": "<confirmed-column-or-empty>",
+    "UpdatedAtColumn": "<confirmed-column-or-empty>",
+    "TemplateKeyPrefix": "legacy-db"
   }
 }
 ```
 
-Changing a physical printer only changes this binding. No PEIS deployment and no report-template modification is required.
+Do not treat these defaults as production schema proof. If `djid` or `cxid` uses a join table or separate definition source, record the relationship with the read-only inspector first and configure or extend the provider only after a sanitized integration fixture establishes the contract.
 
-Recommended production ownership:
+## Evidence tools and safety boundary
 
-- **Scenario definition** (which documents to print): central server/database configuration.
-- **Physical printer binding** (which device handles each role): local PrintAgent configuration or a central admin page pushed to the agent.
+`tools/PEIS.LegacyDbInspector` uses `SELECT` queries against `sys.*` metadata and a controlled `TOP (1)` report sample. By default it writes hashes, lengths, column metadata, and row counts; FRX/SQL content is written only when an operator explicitly requests `--export-template` or `--export-sql`.
 
-## Workstation identity
+`tools/PEIS.LegacyApiProbe` relays a supplied JSON request without parsing it and writes only transport evidence: status, content type, elapsed time, byte length, SHA-256, and the `%PDF-` signature check. It never writes request or response bodies.
 
-The normal B/S request includes a stable `StationId` such as `REG-01`.
+The real integration suite is opt-in through `REPORTPLATFORM_TEST_SQLSERVER=1` plus an explicitly supplied read-only `REPORT_DATABASE__CONNECTIONSTRING`. It never scans for a database or mutates the legacy system.
 
-Preferred ways to provide it, in order:
+## Current verification boundary
 
-1. PEIS workstation/terminal configuration injected into the logged-in session.
-2. One-time browser/workstation pairing stored locally and managed by administrators.
-3. IP-based inference only as a fallback; proxies/NAT make it less reliable.
-
-Users never choose the printer for each print operation.
-
-## Parallelism semantics
-
-For `REGISTRATION_PRINT`:
-
-1. Resolve both document definitions.
-2. Render guide sheet and barcode concurrently when safe.
-3. Store each resulting artifact once.
-4. Dispatch one batch to the workstation PrintAgent.
-5. Agent downloads each distinct artifact once.
-6. A4 printer queue and barcode printer queue run independently, so both can start at the same time.
-7. Jobs targeting the **same** physical printer remain serialized to avoid driver/spooler contention.
-
-For heavy FastReport production workloads, the renderer will also use a global bounded concurrency gate.
-
-## Browser boundary
-
-A normal browser should not be responsible for enumerating Windows printers or silently selecting physical devices.
-The local Windows PrintAgent is the boundary to Windows printing and keeps an outbound SignalR connection to the API.
-
-This avoids browser print dialogs and avoids coupling PEIS pages to local printer APIs.
-
-## Desktop integration
-
-Desktop and B/S share the same central report engine.
-
-- Preview/download: call `/api/reports/pdf`.
-- Business printing: call `/api/print/actions`.
-- Desktop does not embed a second copy of the report engine.
-
-## Production report engine seam
-
-`IReportRenderer` deliberately hides FastReport from the web/printing layers. The production adapter should implement:
-
-- report definition cache (FRX/SQL/parameters/version hash),
-- thin SQL Server/Oracle data provider,
-- bounded concurrent image resolver + URL/content deduplication,
-- fresh FastReport `Report` instance per render,
-- watermark during report rendering where possible,
-- one `Prepare`, one PDF export,
-- A4/label/screen/archive export profiles,
-- per-stage performance telemetry.
+Static provider behavior, binder behavior, cache versioning, API contracts, queue behavior, tool builds, and default integration-test skipping are testable in this repository. Real schema relationships, FRX rendering, historical parameter syntax, production PDF comparison, and physical printer output remain **NOT VERIFIED** until the owner supplies authorized, sanitized evidence.
