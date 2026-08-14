@@ -61,14 +61,18 @@ public interface ILegacyQueryParameterBinder
 }
 
 /// <summary>
-/// Conservative baseline binder. It supports existing ADO.NET-style <c>@name</c> parameters without text
-/// substitution. Unknown historical placeholder formats remain intentionally unimplemented until a legacy fixture
-/// confirms their semantics.
+/// Legacy binder with evidence-backed support for ADO.NET-style <c>@name</c> parameters and the confirmed
+/// legacy stored-procedure form <c>[name]</c>. Square-bracket tokens are transformed only when the preserved
+/// payload supplies a matching scalar, so ordinary SQL identifiers remain untouched.
 /// </summary>
 public sealed class AdoNetLegacyQueryParameterBinder : ILegacyQueryParameterBinder
 {
     private static readonly System.Text.RegularExpressions.Regex ParameterPattern = new(
         "(?<!@)@(?<name>[A-Za-z_][A-Za-z0-9_]*)",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly System.Text.RegularExpressions.Regex BracketParameterPattern = new(
+        "\\[(?<name>[A-Za-z_][A-Za-z0-9_]*)\\]",
         System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
     public LegacyQueryBinding Bind(ReportDefinition definition, ReportRenderRequest request)
@@ -79,8 +83,17 @@ public sealed class AdoNetLegacyQueryParameterBinder : ILegacyQueryParameterBind
                 $"Report '{definition.ReportId}' has no SQL definition.");
 
         var source = BuildParameterIndex(request);
+        var bracketParameterNames = BracketParameterPattern.Matches(definition.SqlText)
+            .Select(match => match.Groups["name"].Value)
+            .Where(source.ContainsKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var commandText = BracketParameterPattern.Replace(definition.SqlText, match =>
+        {
+            var name = match.Groups["name"].Value;
+            return source.ContainsKey(name) ? "@" + name : match.Value;
+        });
         var parameters = new List<LegacyQueryParameter>();
-        foreach (System.Text.RegularExpressions.Match match in ParameterPattern.Matches(definition.SqlText))
+        foreach (System.Text.RegularExpressions.Match match in ParameterPattern.Matches(commandText))
         {
             var name = match.Groups["name"].Value;
             if (parameters.Any(parameter => string.Equals(parameter.Name, name, StringComparison.OrdinalIgnoreCase)))
@@ -90,26 +103,38 @@ public sealed class AdoNetLegacyQueryParameterBinder : ILegacyQueryParameterBind
                     LegacyReportDatabaseErrorCode.ParameterBindFailed,
                     $"Report '{definition.ReportId}' SQL requires parameter '@{name}', but legacy payload does not contain it.");
 
-            parameters.Add(ToParameter(name, value));
+            parameters.Add(ToParameter(name, value, bracketParameterNames.Contains(name)));
         }
 
-        return new LegacyQueryBinding(definition.SqlText, parameters);
+        return new LegacyQueryBinding(commandText, parameters);
     }
 
     private static Dictionary<string, JsonElement> BuildParameterIndex(ReportRenderRequest request)
     {
         var values = new Dictionary<string, JsonElement>(request.Parameters, StringComparer.OrdinalIgnoreCase);
         if (request.LegacyPayload is { ValueKind: JsonValueKind.Object } payload)
-        {
-            foreach (var property in payload.EnumerateObject())
-                values[property.Name] = property.Value.Clone();
-        }
+            IndexPayloadValues(payload, values);
         return values;
     }
 
-    private static LegacyQueryParameter ToParameter(string name, JsonElement value) => value.ValueKind switch
+    private static void IndexPayloadValues(JsonElement payload, Dictionary<string, JsonElement> values)
     {
-        JsonValueKind.String => new LegacyQueryParameter(name, DbType.String, value.GetString()),
+        foreach (var property in payload.EnumerateObject())
+        {
+            if (property.Value.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False or JsonValueKind.Null)
+            {
+                values[property.Name] = property.Value.Clone();
+                continue;
+            }
+
+            if (property.Value.ValueKind == JsonValueKind.Object)
+                IndexPayloadValues(property.Value, values);
+        }
+    }
+
+    private static LegacyQueryParameter ToParameter(string name, JsonElement value, bool useAnsiString) => value.ValueKind switch
+    {
+        JsonValueKind.String => new LegacyQueryParameter(name, useAnsiString ? DbType.AnsiString : DbType.String, value.GetString()),
         JsonValueKind.Number when value.TryGetInt64(out var integer) => new LegacyQueryParameter(name, DbType.Int64, integer),
         JsonValueKind.Number when value.TryGetDecimal(out var number) => new LegacyQueryParameter(name, DbType.Decimal, number),
         JsonValueKind.True => new LegacyQueryParameter(name, DbType.Boolean, true),

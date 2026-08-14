@@ -73,6 +73,32 @@ public sealed class LegacyDatabaseContractsTests
     }
 
     [Fact]
+    public void Binder_translates_confirmed_bracket_placeholders_and_flattens_nested_legacy_payload()
+    {
+        using var payloadDocument = JsonDocument.Parse("{\"djh\":{\"grtjgcjjgid\":\"GROUP-001\",\"sfxmddid\":\"ITEM-001\"},\"bbid\":\"xmtm\"}");
+        var request = new ReportRenderRequest("xmtm", new Dictionary<string, JsonElement>(), LegacyPayload: payloadDocument.RootElement.Clone());
+        var ignored = 0;
+        var definition = CreateDefinition("1", ref ignored) with { SqlText = "exec tjxt_fastreportgetTxmxx [grtjgcjjgid],[sfxmddid]" };
+
+        var binding = new AdoNetLegacyQueryParameterBinder().Bind(definition, request);
+
+        Assert.Equal("exec tjxt_fastreportgetTxmxx @grtjgcjjgid,@sfxmddid", binding.CommandText);
+        Assert.Collection(binding.Parameters,
+            parameter =>
+            {
+                Assert.Equal("grtjgcjjgid", parameter.Name);
+                Assert.Equal(System.Data.DbType.AnsiString, parameter.DbType);
+                Assert.Equal("GROUP-001", parameter.Value);
+            },
+            parameter =>
+            {
+                Assert.Equal("sfxmddid", parameter.Name);
+                Assert.Equal(System.Data.DbType.AnsiString, parameter.DbType);
+                Assert.Equal("ITEM-001", parameter.Value);
+            });
+    }
+
+    [Fact]
     public void Binder_reports_missing_parameter_explicitly()
     {
         var ignored = 0;
