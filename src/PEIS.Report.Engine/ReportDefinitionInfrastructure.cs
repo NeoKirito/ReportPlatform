@@ -55,7 +55,8 @@ public sealed class ReportDefinitionCache
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reportId);
-        var created = new Lazy<Task<ReportDefinition>>(() => factory(cancellationToken), LazyThreadSafetyMode.ExecutionAndPublication);
+        // Metadata creation is shared. It must not inherit cancellation from whichever request first populates the cache.
+        var created = new Lazy<Task<ReportDefinition>>(() => factory(CancellationToken.None), LazyThreadSafetyMode.ExecutionAndPublication);
         var entry = _entries.GetOrAdd(reportId, created);
         if (ReferenceEquals(entry, created))
             Interlocked.Increment(ref _misses);
@@ -64,7 +65,7 @@ public sealed class ReportDefinitionCache
 
         try
         {
-            return await entry.Value.ConfigureAwait(false);
+            return await entry.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {
