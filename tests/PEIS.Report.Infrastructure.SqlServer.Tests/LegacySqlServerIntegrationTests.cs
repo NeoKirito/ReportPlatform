@@ -4,6 +4,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 using PEIS.Report.Contracts;
 using PEIS.Report.Engine;
+using PEIS.Report.FastReport.OpenSource;
 using PEIS.Report.Infrastructure.SqlServer;
 using Xunit;
 
@@ -75,6 +76,76 @@ public sealed class LegacySqlServerIntegrationTests
         }
     }
 
+    [LegacyFastReportSmokeFact]
+    public async Task Real_xmtm_frx_prepares_and_exports_pdf_with_free_fastreport_runtime()
+    {
+        var context = LegacySqlServerTestContext.RequireReportFixture();
+        // Base-PDF smoke only: application-level watermarking remains a separate production-evidence question.
+        var request = context.CreateRequest() with { Watermark = new WatermarkOptions(Enabled: false) };
+        var definitions = context.CreateDefinitionProvider();
+        var templates = new LegacyDatabaseTemplateProvider();
+        // This metadata pre-read records only the decoded FRX hash; it does not persist template content or data values.
+        var definitionForEvidence = await definitions.GetRequiredAsync(request, CancellationToken.None);
+        var templateForEvidence = await templates.GetRequiredAsync(definitionForEvidence, CancellationToken.None);
+        var telemetry = new InMemoryReportRenderTelemetry();
+        var renderer = new FastReportReportRenderer(
+            new ReportDefinitionCache(),
+            definitions,
+            templates,
+            new SqlServerReportDataProvider(Options.Create(context.DatabaseOptions), new AdoNetLegacyQueryParameterBinder()),
+            new RenderConcurrencyGate(new RenderConcurrencyOptions { MaxConcurrentRenders = 1 }),
+            new OpenSourceFastReportRuntime(),
+            telemetry);
+
+        var result = await renderer.RenderPdfAsync(request, CancellationToken.None);
+
+        Assert.True(result.PageCount > 0, "FastReport produced no prepared pages.");
+        Assert.NotEmpty(result.Pdf);
+        Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(result.Pdf.AsSpan(0, Math.Min(5, result.Pdf.Length))));
+        var observation = Assert.Single(telemetry.Snapshot());
+        var timings = observation.Timings;
+        Assert.Contains(timings, timing => timing.Stage == "DefinitionLoad");
+        Assert.Contains(timings, timing => timing.Stage == "TemplateDecode");
+        Assert.Contains(timings, timing => timing.Stage == "SqlQuery");
+        Assert.Contains(timings, timing => timing.Stage == "FrxLoad");
+        Assert.Contains(timings, timing => timing.Stage == "RegisterData");
+        Assert.Contains(timings, timing => timing.Stage == "Prepare");
+        Assert.Contains(timings, timing => timing.Stage == "PdfExport");
+        Assert.Contains(timings, timing => timing.Stage == "Total");
+        await WriteFastReportEvidenceAsync(context, templateForEvidence, observation, result);
+    }
+
+    private static async Task WriteFastReportEvidenceAsync(
+        LegacySqlServerTestContext context,
+        ReportTemplate template,
+        ReportRenderObservation observation,
+        ReportRenderResult result)
+    {
+        var evidencePath = Environment.GetEnvironmentVariable("REPORTPLATFORM_TEST_FASTREPORT_EVIDENCE_PATH");
+        if (string.IsNullOrWhiteSpace(evidencePath)) return;
+
+        var directory = Path.GetDirectoryName(evidencePath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        var evidence = new
+        {
+            renderer = "FastReport.OpenSource",
+            packageVersion = "2026.2.3",
+            reportId = context.ReportId,
+            definitionTable = context.Mapping.DefinitionTable,
+            frxDecodedHash = template.ContentHash,
+            masterRows = observation.Rows,
+            masterColumns = new[] { "xm", "nl", "tmh", "zxksmc", "XMMC", "xb", "flmc" },
+            pages = result.PageCount,
+            pdfBytes = result.Pdf.LongLength,
+            pdfSignature = "%PDF-",
+            watermark = template.Content.Contains("<Watermark", StringComparison.OrdinalIgnoreCase)
+                ? "FRX_WATERMARK_MARKUP_PRESENT"
+                : "WATERMARK_PIPELINE_UNVERIFIED",
+            timings = observation.Timings.Select(timing => new { timing.Stage, timing.ElapsedMilliseconds })
+        };
+        await File.WriteAllTextAsync(evidencePath, JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
     [LegacySqlServerReportFixtureFact]
     public async Task Database_template_version_is_observable_without_mutation()
     {
@@ -136,6 +207,30 @@ internal sealed class LegacySqlServerReportFixtureFactAttribute : FactAttribute
         else if (!LegacySqlServerTestContext.HasReportFixture())
         {
             Skip = "Set REPORTPLATFORM_TEST_REPORT_ID to an approved non-patient report-definition identifier to enable report-fixture assertions.";
+        }
+    }
+}
+
+[AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
+internal sealed class LegacyFastReportSmokeFactAttribute : FactAttribute
+{
+    public LegacyFastReportSmokeFactAttribute()
+    {
+        if (!LegacySqlServerTestContext.IsGateEnabled())
+        {
+            Skip = "Set REPORTPLATFORM_TEST_SQLSERVER=1 to enable real legacy integration tests.";
+        }
+        else if (!LegacySqlServerTestContext.HasConnectionString())
+        {
+            Skip = "Set an explicitly approved read-only REPORT_DATABASE__CONNECTIONSTRING; the suite will not discover a database automatically.";
+        }
+        else if (!LegacySqlServerTestContext.HasReportFixture())
+        {
+            Skip = "Set REPORTPLATFORM_TEST_REPORT_ID to an approved non-patient report-definition identifier to enable FastReport smoke assertions.";
+        }
+        else if (!LegacySqlServerTestContext.IsFastReportGateEnabled())
+        {
+            Skip = "Set REPORTPLATFORM_TEST_FASTREPORT=1 to enable the real FastReport Open Source smoke test.";
         }
     }
 }
@@ -273,6 +368,7 @@ internal sealed class LegacySqlServerTestContext
     public static bool IsGateEnabled() => IsEnabled(Environment.GetEnvironmentVariable(GateVariable));
     public static bool HasConnectionString() => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(ConnectionVariable));
     public static bool HasReportFixture() => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("REPORTPLATFORM_TEST_REPORT_ID"));
+    public static bool IsFastReportGateEnabled() => IsEnabled(Environment.GetEnvironmentVariable("REPORTPLATFORM_TEST_FASTREPORT"));
     public static bool HasUnknownReportFixture() => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("REPORTPLATFORM_TEST_UNKNOWN_REPORT_ID"));
     private static bool IsEnabled(string? value) => value is not null && (value.Equals("1", StringComparison.OrdinalIgnoreCase) || value.Equals("true", StringComparison.OrdinalIgnoreCase) || value.Equals("yes", StringComparison.OrdinalIgnoreCase));
     private static string ReadString(string variable, string fallback) => ReadOptionalString(variable) ?? fallback;

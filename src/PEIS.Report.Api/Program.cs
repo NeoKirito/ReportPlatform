@@ -6,6 +6,7 @@ using PEIS.Report.Api.Printing;
 using PEIS.Report.Api.Storage;
 using PEIS.Report.Contracts;
 using PEIS.Report.Engine;
+using PEIS.Report.FastReport.OpenSource;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -50,7 +51,16 @@ builder.Services.AddHttpClient("report-images");
 builder.Services.AddSingleton<IImageResolver>(sp => new ImageResolver(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-images"),
     sp.GetRequiredService<IOptions<ImageResolutionOptions>>().Value));
-builder.Services.AddSingleton<IReportRenderer, StubReportRenderer>();
+var renderer = builder.Configuration.GetValue<string>("ReportEngine:Renderer") ?? "Stub";
+if (string.Equals(renderer, "FastReportOpenSource", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddSingleton<IFastReportRuntime, OpenSourceFastReportRuntime>();
+    builder.Services.AddSingleton<IReportRenderer, FastReportReportRenderer>();
+}
+else
+{
+    builder.Services.AddSingleton<IReportRenderer, StubReportRenderer>();
+}
 builder.Services.AddSingleton<LegacyReportRequestAdapter>();
 builder.Services.AddSingleton<PrintJobCoordinator>();
 builder.Services.AddSingleton<BusinessPrintCoordinator>();

@@ -3,13 +3,12 @@ using PEIS.Report.Contracts;
 namespace PEIS.Report.Engine;
 
 /// <summary>
-/// Adapter contract implemented in the isolated FastReport integration project once the hospital-approved package,
-/// license, FRX files, and data-registration rules are supplied. Controllers and PrintAgent never reference the
-/// commercial dependency directly.
+/// Adapter contract implemented in an isolated FastReport integration project once an approved runtime package and
+/// its FRX/data-registration rules are configured. Controllers and PrintAgent never reference FastReport types directly.
 /// </summary>
 public interface IFastReportRuntime
 {
-    Task<IFastReportPreparedDocument> PrepareAsync(FastReportRenderContext context, CancellationToken cancellationToken);
+    Task<FastReportRuntimePreparation> PrepareAsync(FastReportRenderContext context, CancellationToken cancellationToken);
     Task ApplyWatermarkAsync(IFastReportPreparedDocument prepared, WatermarkOptions watermark, CancellationToken cancellationToken);
     Task<FastReportPdfOutput> ExportPdfAsync(IFastReportPreparedDocument prepared, PdfExportProfile profile, CancellationToken cancellationToken);
 }
@@ -17,6 +16,11 @@ public interface IFastReportRuntime
 public interface IFastReportPreparedDocument : IAsyncDisposable
 {
 }
+
+/// <summary>Prepared per-request document plus timings produced inside the renderer-specific integration boundary.</summary>
+public sealed record FastReportRuntimePreparation(
+    IFastReportPreparedDocument Document,
+    IReadOnlyList<ReportStageTiming> Timings);
 
 public sealed record FastReportRenderContext(
     ReportRenderRequest Request,
@@ -30,7 +34,7 @@ public sealed record FastReportPdfOutput(byte[] Pdf, int PageCount);
 public sealed class FastReportIntegrationUnavailableException(string message) : InvalidOperationException(message);
 
 /// <summary>
-/// Production rendering pipeline. The concrete FastReport runtime is intentionally injected so the licensed package
+/// Production rendering pipeline. The concrete FastReport runtime is intentionally injected so the renderer package
 /// is confined to an integration boundary and each request creates an independent, mutable report instance.
 /// </summary>
 public sealed class FastReportReportRenderer(
@@ -63,7 +67,7 @@ public sealed class FastReportReportRenderer(
         var definition = await metrics.MeasureAsync("DefinitionLoad", () =>
             definitionCache.GetOrCreateAsync(cacheKey, token => definitions.GetRequiredAsync(request, token), cancellationToken));
         metrics.DefinitionCacheHit = definitionCache.Snapshot().Hits > beforeCache.Hits;
-        var template = await metrics.MeasureAsync("TemplateLoad", () => templates.GetRequiredAsync(definition, cancellationToken));
+        var template = await metrics.MeasureAsync("TemplateDecode", () => templates.GetRequiredAsync(definition, cancellationToken));
         var reportData = await metrics.MeasureAsync("SqlQuery", () => data.QueryAsync(definition, request, cancellationToken));
         metrics.Rows = reportData.RowCount;
         metrics.SqlResultSets = reportData.Tables.Count;
@@ -75,9 +79,10 @@ public sealed class FastReportReportRenderer(
         {
             var profile = PdfExportProfile.Resolve(request.Profile);
             var context = new FastReportRenderContext(request, definition, template, reportData, profile);
-            await metrics.MeasureAsync("FrxLoad", () => Task.CompletedTask);
-            await metrics.MeasureAsync("RegisterData", () => Task.CompletedTask);
-            await using var prepared = await metrics.MeasureAsync("Prepare", () => runtime.PrepareAsync(context, cancellationToken));
+            var preparation = await runtime.PrepareAsync(context, cancellationToken);
+            foreach (var timing in preparation.Timings)
+                metrics.Record(timing.Stage, timing.ElapsedMilliseconds);
+            await using var prepared = preparation.Document;
             await metrics.MeasureAsync("Watermark", () => runtime.ApplyWatermarkAsync(prepared, request.Watermark ?? new WatermarkOptions(), cancellationToken));
             output = await metrics.MeasureAsync("PdfExport", () => runtime.ExportPdfAsync(prepared, profile, cancellationToken));
         }
@@ -97,10 +102,10 @@ public sealed class FastReportReportRenderer(
 /// </summary>
 public sealed class MissingFastReportRuntime : IFastReportRuntime
 {
-    private const string Message = "FastReport rendering is blocked until a hospital-approved, .NET-compatible FastReport runtime package and its required license entitlement are configured outside this public repository.";
+    private const string Message = "FastReport rendering is blocked until an approved, .NET-compatible FastReport runtime package is configured.";
 
-    public Task<IFastReportPreparedDocument> PrepareAsync(FastReportRenderContext context, CancellationToken cancellationToken)
-        => Task.FromException<IFastReportPreparedDocument>(new FastReportIntegrationUnavailableException(Message));
+    public Task<FastReportRuntimePreparation> PrepareAsync(FastReportRenderContext context, CancellationToken cancellationToken)
+        => Task.FromException<FastReportRuntimePreparation>(new FastReportIntegrationUnavailableException(Message));
 
     public Task ApplyWatermarkAsync(IFastReportPreparedDocument prepared, WatermarkOptions watermark, CancellationToken cancellationToken)
         => Task.FromException(new FastReportIntegrationUnavailableException(Message));

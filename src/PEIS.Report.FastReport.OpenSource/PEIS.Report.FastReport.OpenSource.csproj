@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PEIS.Report.Engine\PEIS.Report.Engine.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Official FastReports MIT-licensed packages; package versions are pinned together for API compatibility. -->
+    <PackageReference Include="FastReport.OpenSource" Version="2026.2.3" />
+    <PackageReference Include="FastReport.OpenSource.Export.PdfSimple" Version="2026.2.3" />
+  </ItemGroup>
+</Project>

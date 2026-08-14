@@ -82,6 +82,13 @@ public sealed class ReportRenderMetrics
     public int Pages { get; set; }
     public long PdfBytes { get; set; }
 
+    /// <summary>Records a renderer-boundary measurement without exposing the mutable timing collection.</summary>
+    public void Record(string stage, long elapsedMilliseconds)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stage);
+        _timings.Add(new ReportStageTiming(stage, Math.Max(0, elapsedMilliseconds)));
+    }
+
     public async Task MeasureAsync(string stage, Func<Task> operation)
     {
         var stopwatch = Stopwatch.StartNew();

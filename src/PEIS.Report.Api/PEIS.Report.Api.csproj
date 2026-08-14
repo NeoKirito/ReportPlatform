@@ -5,6 +5,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PEIS.Report.Contracts\PEIS.Report.Contracts.csproj" />
     <ProjectReference Include="..\PEIS.Report.Engine\PEIS.Report.Engine.csproj" />
+    <ProjectReference Include="..\PEIS.Report.FastReport.OpenSource\PEIS.Report.FastReport.OpenSource.csproj" />
     <ProjectReference Include="..\PEIS.Report.Infrastructure.SqlServer\PEIS.Report.Infrastructure.SqlServer.csproj" />
   </ItemGroup>
 </Project>

@@ -1,36 +1,55 @@
-# FastReport Smoke-Test Status
+# FastReport Smoke Test Status
 
-> **Status: `FASTREPORT_DEPENDENCY_BLOCKED`.** This gate does not download, restore, copy, decompile, or otherwise introduce FastReport without a user-supplied lawful package and license entitlement.
+> **Status: `FASTREPORT COMPATIBILITY = SMOKE PASS` for the user-confirmed free FastReport Open Source runtime.** The smoke uses only official MIT-licensed NuGet packages and does not introduce commercial DLLs, license keys, trial bypasses, credentials, FRX bodies, SQL bodies, or patient identifiers into the repository.
 
-## Dependency inventory
+## Runtime and isolation
 
-A filename-only inventory was run against the local FastReport-relevant program directories, the current user's NuGet cache, the ReportPlatform workspace, the adjacent legacy Java workspace, and the preserved `fix-web-peis-ui-v2-31ccde7.zip` archive. It found **zero** FastReport DLL or NuGet-package matches and **zero** FastReport filename matches in the archive. The raw inventory is stored only in the ignored private evidence directory.
-
-| Requirement | Current result | Gate decision |
-|---|---|---|
-| Licensed FastReport package/DLL | Not supplied and not found in the inventoried locations. | **BLOCKED** |
-| Legal entitlement / license material | Not supplied. | **BLOCKED** |
-| Non-empty `Master` data-provider fixture | Confirmed by a read-only integration test with a minimum row count of one. | Ready when runtime is lawful and available. |
-| Base64 UTF-8 FRX decoding | Covered by offline contract test. | Ready when runtime is lawful and available. |
-| Renderer-specific `nl` coercion (`Int32` source versus FRX `Int16`) | Cannot be asserted without FastReport runtime. | **PENDING** |
-| Renderer-specific `XMMC`/`xmmc` field resolution | The provider boundary is covered by case-insensitive `DataTable` behavior; FastReport behavior needs smoke verification. | **PENDING** |
-
-## Smoke-test scope once unblocked
-
-The future smoke test will be intentionally narrow. It will construct a **new Report instance per request**, load the decoded `xmtm` FRX, register the read-only `Master` `DataTable` under exactly that name, set only the existing non-sensitive template parameters, prepare the report, and export a disposable PDF artifact for structural validation. It will not test throughput, caching, printing, or multi-request reuse. FastReport types must remain isolated from Controller, Compatibility, Printing, and Contracts layers.
-
-No dependency or smoke-test code is committed while this status is blocked.
-
-## Current real-smoke record
-
-| Item | Result |
+| Concern | Result |
 |---|---|
-| Fixture route | `querytype=djwh`, `bbid=xmtm` — **READY** at the resolver, definition, template-decoding, and read-only SQL-data-provider boundaries. |
-| Input data | An approved private fixture returns `Master` with at least one row — **READY**. Its identifiers remain only in ignored runtime files. |
-| FRX source | The database-owned Base64 UTF-8 template is decoded at runtime — **READY**. Neither its body nor a copy is committed. |
-| FastReport `Report` construction | **NOT RUN** — no lawful runtime assembly is available. |
-| FRX load / `RegisterData` / `Prepare` | **NOT RUN** — no lawful runtime assembly is available. |
-| `XMMC`/`xmmc` and `nl` compatibility | **NOT RUN** at the renderer boundary. |
-| PDF export / `%PDF-` / pages / bytes | **NOT RUN** — no PDF was produced by the new renderer. |
-| Timing baseline | **NOT RUN** — renderer stages cannot be measured without the runtime. |
-| Old API comparison / watermark pipeline | **NOT RUN** for this gate. The base database and template contract is documented separately. |
+| Runtime | `FastReport.OpenSource` `2026.2.3` |
+| PDF exporter | `FastReport.OpenSource.Export.PdfSimple` `2026.2.3` |
+| Renderer isolation | `src/PEIS.Report.FastReport.OpenSource` implements Engine-owned `IFastReportRuntime`. |
+| Composition | API selects it only with `ReportEngine:Renderer=FastReportOpenSource`; default remains `Stub`. |
+| Report lifetime | A new `FastReport.Report` is created, prepared, exported, and disposed for every request. |
+| CI gate | The real smoke is skipped unless **both** `REPORTPLATFORM_TEST_SQLSERVER=1` and `REPORTPLATFORM_TEST_FASTREPORT=1` are explicitly set with an approved private connection and fixture. |
+
+## Real xmtm base-PDF smoke
+
+The smoke calls the existing legacy path, not a recreated template: `LegacyPayloadReportResolver` → `LegacyDatabaseReportDefinitionProvider` → `LegacyDatabaseTemplateProvider` → `SqlServerReportDataProvider` → `OpenSourceFastReportRuntime`. The test uses the private approved sample only at runtime and retains no request identifiers or business-row values.
+
+| Requirement | Result |
+|---|---|
+| `querytype=djwh`, `bbid=xmtm` resolution | **PASS** |
+| `dbo.xt_bgdy_djwh_zzj` definition lookup | **PASS** |
+| Base64 UTF-8 FRX decode | **PASS** |
+| Non-empty `Master` registration | **PASS**: 1 row, 7 columns |
+| `Master` exact data source name | **PASS** |
+| `XMMC` SQL column / `Master.xmmc` FRX expression | **PASS** |
+| `nl: System.Int32` data / `Int16` FRX dictionary declaration | **PASS** without conversion |
+| FRX Load / Prepare | **PASS** |
+| PDF pages / bytes / header | **1 / 45,365 / `%PDF-`** |
+| Per-request report lifetime | **PASS** by implementation boundary; no static or singleton `Report` exists. |
+
+## Measured compatibility baseline
+
+This is a single one-page compatibility run, **not** a performance claim for a large medical report. Values below are the final measured run and are retained as a renderer baseline only.
+
+| Stage | Elapsed |
+|---|---:|
+| DefinitionVersionCheck | 1 ms |
+| DefinitionLoad | 6 ms |
+| TemplateDecode | 0 ms |
+| SqlQuery | 148 ms |
+| RegisterData | 2 ms |
+| FrxLoad | 45 ms |
+| Prepare | 77 ms |
+| PdfExport | 56 ms |
+| Total | 383 ms |
+
+## Watermark and comparison boundary
+
+The smoke explicitly sets `WatermarkEnabled=false` for a base-PDF verification. The database FRX did not yield a committed watermark assertion, and no application overlay has been added. Therefore **`WATERMARK PIPELINE = UNVERIFIED`**. The old API PDF remains a transport-level compatibility reference; page-level or pixel-level old/new visual comparison was **NOT RUN** because no old PDF body is retained in the repository and this gate does not require byte-identical output.
+
+## Artifact handling
+
+The test writes only a private, ignored metadata file when the smoke script supplies `REPORTPLATFORM_TEST_FASTREPORT_EVIDENCE_PATH`. It records report id, definition table, decoded FRX hash, row count, fixed column names, page count, PDF size, PDF signature, watermark status, and stage timings. It never writes a PDF artifact, FRX content, SQL body, connection string, request payload, patient data, or license information.

@@ -13,7 +13,7 @@ public sealed class FastReportRuntimeGateTests
         var error = await Assert.ThrowsAsync<FastReportIntegrationUnavailableException>(() =>
             runtime.PrepareAsync(null!, CancellationToken.None));
 
-        Assert.Contains("hospital-approved", error.Message, StringComparison.Ordinal);
-        Assert.Contains("license entitlement", error.Message, StringComparison.Ordinal);
+        Assert.Contains("approved", error.Message, StringComparison.Ordinal);
+        Assert.Contains(".NET-compatible", error.Message, StringComparison.Ordinal);
     }
 }

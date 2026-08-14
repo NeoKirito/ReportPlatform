@@ -1,37 +1,43 @@
-# FastReport Acquisition Requirements
+# FastReport Open Source Acquisition Requirements
 
-> **Current gate: `FASTREPORT COMPATIBILITY = DEPENDENCY BLOCKED`.** The data, FRX decoding, and `Master` registration preconditions are ready; the only blocker is the absence of a lawful, .NET-compatible FastReport runtime and its required entitlement.
+> **Current gate: no commercial FastReport acquisition is required.** The user confirmed the free FastReport version, and the project now uses official MIT-licensed packages from NuGet.org. This document defines the reproducible and safe dependency boundary for that choice.
 
-Provide **one** of the following lawful inputs. Do not add any DLL, package archive, credential, license key, or customer account material to this public repository.
+## Required packages
 
-| Option | What to provide | What this unlocks | Safe handling boundary |
-|---|---|---|---|
-| A. Corporate Fast Reports NuGet access | Confirmation that the company owns FastReport .NET, the entitled account holder or approved administrator contact, the approved package ID/version, and the license mechanism. | A modern .NET-compatible package restore and real smoke test. | Configure the source and credentials only in a user-level `NuGet.Config`, credential provider, or secret environment variable. Never commit the source credentials or a private `NuGet.Config`. |
-| B. Legal FastReport .NET installation | An explicitly approved local installation path, plus product edition/version and license mechanism. | Read-only assembly metadata inspection; if the version supports .NET 10, a local conditional integration path can be evaluated. | Keep any copied vendor files only under ignored `.runtime/` during investigation; do not reference a proprietary DLL from tracked project files. |
-| C. Company-owned package archive | A company-provided package archive or internal package-feed access with the exact package/version and entitlement confirmation. | Controlled restore through a local, ignored source or approved private feed. | Store the archive outside the repository or under ignored `.runtime/`; do not commit it. |
-| D. Old Report-service publish directory | The legacy service publish directory or an approved archive, including `FastReport*.dll`, adjacent `*.deps.json`, `*.config`, `licenses.licx` filename, and export dependencies. | Historical renderer-version evidence: assembly/file/product version, public-key token, target-framework hint, `FastReport.Export.Pdf` and `FastReport.Web` presence. | Read-only inspection only. A .NET Framework-only legacy DLL is evidence, **not** a DLL to reference from .NET 10. |
+| Package | Version | Source | Purpose |
+|---|---:|---|---|
+| `FastReport.OpenSource` | `2026.2.3` | NuGet.org, owner `FastReports` | Free report runtime and FRX load/prepare support. |
+| `FastReport.OpenSource.Export.PdfSimple` | `2026.2.3` | NuGet.org, owner `FastReports` | Official basic free PDF export plugin. |
 
-## Minimum information needed for an executable smoke gate
+The versions are pinned together in `PEIS.Report.FastReport.OpenSource.csproj` to avoid an accidental API mismatch. Both packages publicly declare support for .NET 6 or higher, while this repository targets .NET 10.[1] [2]
 
-The fastest path is Option A. The implementation needs the following information before any FastReport package is referenced:
+## License and repository boundary
 
-| Required item | Why it is needed |
-|---|---|
-| Exact commercial package ID and version | Prevents an accidental demo/trial or incompatible product line. |
-| Edition and legal entitlement confirmation | Determines whether PDF export is licensed and permitted in the hospital deployment. |
-| License activation mechanism | Keeps license configuration out of source control and avoids runtime surprises. |
-| Supported target framework / RID | Confirms compatibility with the project’s .NET 10 target rather than an old .NET Framework-only assembly. |
-| Package source access method | Enables a restore without embedding account tokens or credentials in the repository. |
-| If using an existing install: full approved directory path | Allows a read-only version/dependency inspection before deciding whether it is usable. |
+The official upstream license is MIT. The required copyright and permission notice must remain in any distributed copy or substantial portion of the software.[3] This repository references packages; it does not commit a DLL, package archive, license key, account token, trial bypass, or private NuGet configuration.
 
-## What will happen after a lawful runtime is available
+Normal public NuGet restore is sufficient. No credentials or user-specific feed configuration are needed for this free path. The commercial FastReport product line may be evaluated later only if a future requirement needs its separate advanced PDF capabilities; it is not a prerequisite for the current compatibility smoke.
 
-The integration will remain behind `IFastReportRuntime`. Each real smoke invocation will create a new `FastReport.Report`, load the decoded database FRX unchanged, register the actual `Master` `DataTable` unchanged, enable the required data source, prepare, export PDF, dispose the report, and record timing. The smoke will specifically prove or disprove `XMMC`/`xmmc` lookup and the source `nl: System.Int32` versus FRX `System.Int16` declaration. It will not perform performance tuning, template rewriting, print-agent work, or changes to `main`.
+## Activation requirements for real smoke
 
-> A legacy FastReport DLL can identify historical renderer behavior, but it does **not** imply that the DLL can or should be referenced by a .NET 10 project.
+The real database smoke remains intentionally opt-in because it accesses private infrastructure and approved sample data. Enable it only in a controlled environment with all of the following process-local values:
+
+| Setting | Required value / source | Never commit |
+|---|---|---|
+| `REPORTPLATFORM_TEST_SQLSERVER` | `1` | No secret itself, but do not set it in public CI. |
+| `REPORTPLATFORM_TEST_FASTREPORT` | `1` | No secret itself, but do not set it in public CI. |
+| `REPORT_DATABASE__CONNECTIONSTRING` | Explicitly approved read-only connection | **Yes** |
+| `REPORTPLATFORM_TEST_REPORT_ID` | `xmtm` | Keep runtime-only with the test setup. |
+| `REPORTPLATFORM_TEST_LEGACY_PAYLOAD_JSON` | Approved private request body | **Yes** |
+| `REPORTPLATFORM_TEST_FASTREPORT_EVIDENCE_PATH` | Ignored `.runtime/private-legacy-evidence/` path | The output is private. |
+
+The provided local runtime script loads these values only from ignored files and writes a metadata-only evidence summary. It does not save a PDF, FRX, SQL, raw payload, patient row, or connection string.
+
+## Non-goals of the free-runtime smoke
+
+The selected PDF Simple plugin proves FRX loading, `Master` data registration, Prepare, page creation, and basic `%PDF-` export. It does not assert commercial FastReport feature parity, encryption, digital signing, font embedding, pixel-identical output, large-report performance, print-agent integration, or watermarks.
 
 ## References
 
-The related investigation and decision record is in [FASTREPORT_DEPENDENCY_REPORT.md](FASTREPORT_DEPENDENCY_REPORT.md). Fast Reports documents client-account access to unrestricted packages through its private NuGet service.[1]
-
-[1]: https://www.fast-report.com/blogs/private-nuget-server "Fast Reports Private NuGet-server"
+[1]: https://www.nuget.org/packages/FastReport.OpenSource "FastReport.OpenSource 2026.2.3 on NuGet.org"
+[2]: https://www.nuget.org/packages/FastReport.OpenSource.Export.PdfSimple "FastReport.OpenSource.Export.PdfSimple 2026.2.3 on NuGet.org"
+[3]: https://raw.githubusercontent.com/FastReports/FastReport/master/LICENSE.md "FastReport Open Source MIT License"
