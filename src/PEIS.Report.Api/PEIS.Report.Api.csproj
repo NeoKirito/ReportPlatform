@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PEIS.Report.Contracts\PEIS.Report.Contracts.csproj" />
+    <ProjectReference Include="..\PEIS.Report.Engine\PEIS.Report.Engine.csproj" />
+  </ItemGroup>
+</Project>

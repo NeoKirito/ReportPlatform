@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PEIS 一键业务打印演示</title>
+  <style>
+    body{font-family:system-ui,"Microsoft YaHei",sans-serif;margin:32px;max-width:860px;line-height:1.6}
+    .card{border:1px solid #ddd;border-radius:10px;padding:18px;margin:16px 0}
+    label{display:block;margin:10px 0} input,button{font:inherit;padding:8px 10px} input{min-width:280px}
+    button{margin-top:12px;font-weight:600} pre{background:#f5f5f5;padding:14px;overflow:auto;border-radius:8px}
+    .muted{color:#666}
+  </style>
+</head>
+<body>
+<h1>PEIS B/S 一键业务打印</h1>
+<p>操作员不选择打印机。一个“登记打印”动作自动生成导检单和条形码，并路由到该工作站预先绑定的 A4 / 条码打印机。</p>
+
+<div class="card">
+  <label>工作站编号 <input id="stationId" value="REG-01"></label>
+  <label>体检号 <input id="tjh" value="TJ202608140001"></label>
+  <button id="submit">登记打印（导检单 + 条码）</button>
+  <p class="muted">生产版中 StationId 应由 PEIS 工作站配置/登录会话自动提供，这里输入框仅用于开发演示。</p>
+</div>
+
+<pre id="output">尚未提交</pre>
+<script>
+const output=document.querySelector('#output');
+document.querySelector('#submit').onclick=async()=>{
+  const body={
+    actionCode:'REGISTRATION_PRINT',
+    stationId:document.querySelector('#stationId').value,
+    parameters:{tjh:document.querySelector('#tjh').value},
+    jobName:'登记打印'
+  };
+  const r=await fetch('/api/print/actions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  output.textContent=await r.text();
+};
+</script>
+</body>
+</html>
