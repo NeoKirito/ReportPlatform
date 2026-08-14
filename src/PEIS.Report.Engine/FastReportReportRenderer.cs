@@ -97,7 +97,7 @@ public sealed class FastReportReportRenderer(
 /// </summary>
 public sealed class MissingFastReportRuntime : IFastReportRuntime
 {
-    private const string Message = "FastReport rendering is blocked until an approved FastReport package, license, FRX templates, and data-registration rules are supplied.";
+    private const string Message = "FastReport rendering is blocked until a hospital-approved, .NET-compatible FastReport runtime package and its required license entitlement are configured outside this public repository.";
 
     public Task<IFastReportPreparedDocument> PrepareAsync(FastReportRenderContext context, CancellationToken cancellationToken)
         => Task.FromException<IFastReportPreparedDocument>(new FastReportIntegrationUnavailableException(Message));
