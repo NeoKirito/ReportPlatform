@@ -108,7 +108,7 @@ internal static class LegacyDbInspectorProgram
             """;
 
         const string countSql = """
-            SELECT s.name AS SchemaName, t.name AS TableName, SUM(ps.row_count) AS RowCount
+            SELECT s.name AS SchemaName, t.name AS TableName, SUM(ps.row_count) AS [RowCount]
             FROM sys.tables AS t
             INNER JOIN sys.schemas AS s ON s.schema_id = t.schema_id
             INNER JOIN sys.dm_db_partition_stats AS ps ON ps.object_id = t.object_id
@@ -145,7 +145,7 @@ internal static class LegacyDbInspectorProgram
                 var table = GetOrCreate(tables, reader.GetString(1));
                 table.Schema = reader.GetString(0);
                 table.IndexEntries.Add(new IndexColumnEntry(
-                    reader.GetString(2), reader.GetBoolean(3), reader.GetBoolean(4), reader.GetInt32(5), reader.GetString(6), reader.GetString(7)));
+                    reader.GetString(2), reader.GetBoolean(3), reader.GetBoolean(4), Convert.ToInt32(reader.GetValue(5), System.Globalization.CultureInfo.InvariantCulture), reader.GetString(6), reader.GetString(7)));
             }
         }
 
