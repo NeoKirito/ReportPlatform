@@ -96,9 +96,16 @@ workstation identity are new concepts because the old service did not provide si
 
 ## Current implementation boundary
 
-The supplied legacy package is a compiled IIS deployment. It confirms the old public method and route, but it does
-not include the newest watermark source/current FastReport development reference. `FastReportReportRenderer` is
-therefore still the production seam to implement. The architecture deliberately keeps compatibility outside that
-engine so performance work does not force PEIS callers to change.
+The legacy `djwh + bbid` route is now evidenced against the supplied SQL Server source: the service resolves the
+confirmed definition table, decodes its Base64 UTF-8 FRX, supplies the `Master` data set, and renders a base PDF with
+`FastReport.OpenSource` plus the official PdfSimple exporter. The public compatibility controller remains outside the
+renderer so PEIS callers do not need to change their JSON contract.
 
-See `docs/ARCHITECTURE.md`, `docs/PRINT_ROUTING.md`, `docs/PERFORMANCE_PLAN.md`, and `docs/MIGRATION_PLAN.md`.
+The current evidence is intentionally narrower than a full production acceptance claim: application-level watermark
+behavior, old/new visual PDF equivalence, production-load targets, Windows Service packaging, and physical printer
+output still require site approval and on-site validation.
+
+For practical startup, configuration, security, test, printing, deployment, and rollback steps, read
+[`docs/USAGE_AND_DEPLOYMENT_GUIDE.md`](docs/USAGE_AND_DEPLOYMENT_GUIDE.md). Supporting evidence remains in
+`docs/ARCHITECTURE.md`, `docs/PRINT_ROUTING.md`, `docs/FASTREPORT_SMOKE_TEST_STATUS.md`, and
+`docs/LEGACY_DATABASE_CONTRACT.md`.
