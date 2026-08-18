@@ -17,6 +17,8 @@ builder.Services.Configure<RenderConcurrencyOptions>(builder.Configuration.GetSe
 builder.Services.Configure<ImageResolutionOptions>(builder.Configuration.GetSection("ImageResolution"));
 builder.Services.Configure<ReportEngineOptions>(builder.Configuration.GetSection("ReportEngine"));
 builder.Services.Configure<ReportDatabaseOptions>(builder.Configuration.GetSection("ReportDatabase"));
+builder.Services.Configure<WatermarkDatabaseOptions>(builder.Configuration.GetSection("WatermarkDatabase"));
+
 builder.Services.Configure<LegacyReportSchemaMapping>(builder.Configuration.GetSection("LegacyReportSchema"));
 builder.Services.AddSignalR(options =>
 {
@@ -54,6 +56,7 @@ builder.Services.AddSingleton<IImageResolver>(sp => new ImageResolver(
 var renderer = builder.Configuration.GetValue<string>("ReportEngine:Renderer") ?? "Stub";
 if (string.Equals(renderer, "FastReportOpenSource", StringComparison.OrdinalIgnoreCase))
 {
+    builder.Services.AddSingleton<IWatermarkTextProvider, SqlServerWatermarkTextProvider>();
     builder.Services.AddSingleton<IFastReportRuntime, OpenSourceFastReportRuntime>();
     builder.Services.AddSingleton<IReportRenderer, FastReportReportRenderer>();
 }

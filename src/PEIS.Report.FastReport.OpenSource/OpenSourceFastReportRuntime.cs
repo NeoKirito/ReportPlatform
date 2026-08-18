@@ -1,6 +1,8 @@
 using System.Diagnostics;
+using System.Drawing;
 using FastReport;
 using FastReport.Export.PdfSimple;
+using FastReport.Utils;
 using PEIS.Report.Contracts;
 using PEIS.Report.Engine;
 using FastReportReport = FastReport.Report;
@@ -67,11 +69,32 @@ public sealed class OpenSourceFastReportRuntime : IFastReportRuntime
         ArgumentNullException.ThrowIfNull(watermark);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (prepared is not OpenSourceFastReportPreparedDocument)
+        if (prepared is not OpenSourceFastReportPreparedDocument document)
             throw new ArgumentException("Prepared document was not created by FastReport Open Source runtime.", nameof(prepared));
+        if (!watermark.Enabled || string.IsNullOrWhiteSpace(watermark.Text))
+            return Task.CompletedTask;
 
-        // Database FRX remains the source of truth. This first free-runtime smoke deliberately preserves template
-        // watermarks; an application overlay is added only after the actual production watermark source is evidenced.
+        var text = watermark.Text.Trim();
+        var alpha = (int)Math.Round(Math.Clamp(watermark.Opacity, 0d, 1d) * byte.MaxValue, MidpointRounding.AwayFromZero);
+        var rotation = watermark.Angle < 0 ? WatermarkTextRotation.ForwardDiagonal : WatermarkTextRotation.BackwardDiagonal;
+        for (var index = 0; index < document.Report.PreparedPages.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var page = document.Report.PreparedPages.GetPage(index);
+            if (page is null)
+                continue;
+
+            // Prepared pages are exported by PDFSimple; modifying and replacing each prepared page ensures the overlay
+            // is visible in the produced PDF rather than only in the original FRX page definition.
+            page.Watermark.Enabled = true;
+            page.Watermark.Text = text;
+            page.Watermark.Font = new Font("Arial", 54, FontStyle.Bold);
+            page.Watermark.TextFill = new SolidFill(Color.FromArgb(alpha, Color.Gray));
+            page.Watermark.TextRotation = rotation;
+            page.Watermark.ShowTextOnTop = true;
+            document.Report.PreparedPages.ModifyPage(index, page);
+        }
+
         return Task.CompletedTask;
     }
 
