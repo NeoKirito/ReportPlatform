@@ -79,6 +79,35 @@ public sealed class LegacySqlServerIntegrationTests
     }
 
     [LegacySqlServerReportFixtureFact]
+    public async Task Real_xmtm_data_exports_editable_pdf_style_label_docx()
+    {
+        var context = LegacySqlServerTestContext.RequireReportFixture();
+        var request = context.CreateRequest();
+        var definition = await context.CreateDefinitionProvider().GetRequiredAsync(request, CancellationToken.None);
+        var dataProvider = new SqlServerReportDataProvider(
+            Options.Create(context.DatabaseOptions),
+            new AdoNetLegacyQueryParameterBinder());
+        var reportData = await dataProvider.QueryAsync(definition, request, CancellationToken.None);
+        using var watermarkTextProvider = new SqlServerWatermarkTextProvider(
+            Options.Create(new WatermarkDatabaseOptions()),
+            Options.Create(context.DatabaseOptions));
+        var watermarkText = await watermarkTextProvider.GetWatermarkTextAsync(CancellationToken.None);
+
+        var output = await new XmtmLabelDocxReportRenderer().RenderAsync(reportData, watermarkText, CancellationToken.None);
+        await WriteXmtmLabelDocxAsync(output.Docx);
+
+        Assert.NotEmpty(output.Docx);
+        using var stream = new MemoryStream(output.Docx);
+        using var document = WordprocessingDocument.Open(stream, false);
+        var mainPart = document.MainDocumentPart ?? throw new InvalidOperationException("Generated DOCX has no main document part.");
+        var wordDocument = mainPart.Document ?? throw new InvalidOperationException("Generated DOCX has no Word document.");
+        var body = Assert.IsType<DocumentFormat.OpenXml.Wordprocessing.Body>(wordDocument.Body);
+        Assert.Contains("姓名：", body.InnerText, StringComparison.Ordinal);
+        Assert.Contains("科室：", body.InnerText, StringComparison.Ordinal);
+        Assert.Single(mainPart.ImageParts);
+    }
+
+    [LegacySqlServerReportFixtureFact]
     public async Task Real_xmtm_data_exports_editable_docx_with_free_openxml_renderer()
     {
         var context = LegacySqlServerTestContext.RequireReportFixture();
@@ -145,6 +174,16 @@ public sealed class LegacySqlServerIntegrationTests
         Assert.Contains(timings, timing => timing.Stage == "PdfExport");
         Assert.Contains(timings, timing => timing.Stage == "Total");
         await WriteFastReportEvidenceAsync(context, templateForEvidence, observation, result);
+    }
+
+    private static async Task WriteXmtmLabelDocxAsync(byte[] docx)
+    {
+        var docxPath = Environment.GetEnvironmentVariable("REPORTPLATFORM_TEST_XMTM_LABEL_DOCX_PATH");
+        if (string.IsNullOrWhiteSpace(docxPath)) return;
+
+        var directory = Path.GetDirectoryName(docxPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        await File.WriteAllBytesAsync(docxPath, docx);
     }
 
     private static async Task WriteDocxAsync(byte[] docx)
