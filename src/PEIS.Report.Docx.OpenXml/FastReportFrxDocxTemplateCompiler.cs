@@ -46,7 +46,27 @@ public sealed class FastReportFrxDocxTemplateCompiler
                     unsupported.Add($"{name}:{node.Attribute("Name")?.Value}:barcode={node.Attribute("Barcode")?.Value}");
                     continue;
                 }
-                elements.Add(CreateBarcodeElement(node, sequence++));
+
+                // FastReport Code128 normally consumes the object rectangle with bars in the upper portion and the
+                // encoded value as a caption below. Split those two semantic regions for Word so the next FRX object
+                // cannot be obscured by a full-height bitmap.
+                var barcode = CreateBarcodeElement(node, sequence++);
+                var barHeight = Math.Max(1, barcode.HeightPoints * 0.63);
+                elements.Add(barcode with { HeightPoints = barHeight });
+                if (!string.Equals(node.Attribute("ShowText")?.Value, "false", StringComparison.OrdinalIgnoreCase))
+                {
+                    elements.Add(new DocxTextElement(
+                        ElementId: $"{barcode.ElementId}-caption",
+                        LeftPoints: barcode.LeftPoints,
+                        TopPoints: barcode.TopPoints + barHeight,
+                        WidthPoints: barcode.WidthPoints,
+                        HeightPoints: Math.Max(1, barcode.HeightPoints * 0.17),
+                        ZIndex: sequence++,
+                        Expression: barcode.Expression,
+                        FontFamily: "Microsoft YaHei",
+                        FontPoints: 8,
+                        Alignment: DocxHorizontalAlignment.Center));
+                }
                 continue;
             }
 

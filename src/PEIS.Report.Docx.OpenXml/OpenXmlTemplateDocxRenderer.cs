@@ -49,6 +49,7 @@ public sealed class OpenXmlTemplateDocxRenderer
         var paragraph = new W.Paragraph(
             new W.ParagraphProperties(
                 new W.SpacingBetweenLines { Before = "0", After = "0", Line = "1", LineRule = W.LineSpacingRuleValues.Exact }));
+        paragraph.Append(CreateTextBoxShapeTypeRun());
 
         foreach (var element in template.Elements.OrderBy(x => x.ZIndex).ThenBy(x => x.ElementId, StringComparer.OrdinalIgnoreCase))
         {
@@ -67,6 +68,20 @@ public sealed class OpenXmlTemplateDocxRenderer
         }
 
         return paragraph;
+    }
+
+    private static W.Run CreateTextBoxShapeTypeRun()
+    {
+        var shapeType = new V.Shapetype
+        {
+            Id = "_x0000_t202",
+            CoordinateSize = "21600,21600",
+            OptionalNumber = 202,
+            Filled = false,
+            Stroked = false
+        };
+        shapeType.SetAttribute(new OpenXmlAttribute(string.Empty, "path", string.Empty, "m,l,21600,21600e"));
+        return new W.Run(new W.Picture(shapeType));
     }
 
     private static W.Run CreateTextBoxRun(DocxTextElement element, string text)
@@ -88,7 +103,8 @@ public sealed class OpenXmlTemplateDocxRenderer
                         new W.Bold { Val = element.Bold }),
                     new W.Text(text) { Space = SpaceProcessingModeValues.Preserve })));
         var shape = CreateShape(element, $"docx-text-{element.ElementId}");
-        shape.Append(new V.TextBox(content) { Inset = "0,0,0,0" });
+        shape.Type = "#_x0000_t202";
+        shape.Append(new V.TextBox(content) { Inset = "0,0,0,0", Style = "mso-fit-shape-to-text:t" });
         return new W.Run(new W.Picture(shape));
     }
 
