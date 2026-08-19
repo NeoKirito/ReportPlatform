@@ -1,7 +1,6 @@
-using System.Net.Http;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PEIS.PrintAgent.Printing;
 using PEIS.Report.Contracts;
@@ -12,8 +11,8 @@ public sealed class AgentWorker(
     IOptions<AgentOptions> options,
     AgentIdentityStore identityStore,
     PrinterCatalog printers,
+    PrintArtifactDownloader artifacts,
     PrinterQueueManager queues,
-    IHttpClientFactory httpClientFactory,
     ILogger<AgentWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -30,7 +29,9 @@ public sealed class AgentWorker(
             {
                 await RunConnectionAsync(cfg, stoppingToken);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Print agent connection stopped; reconnecting.");
@@ -51,7 +52,11 @@ public sealed class AgentWorker(
 
         await connection.StartAsync(token);
         await RegisterAsync(connection, cfg, token);
-        logger.LogInformation("PrintAgent {AgentId} station {StationId} connected to {Server}", cfg.AgentId, cfg.StationId, cfg.ServerUrl);
+        logger.LogInformation(
+            "PrintAgent {AgentId} station {StationId} connected to {Server}",
+            cfg.AgentId,
+            cfg.StationId,
+            cfg.ServerUrl);
 
         var heartbeatCount = 0;
         while (!token.IsCancellationRequested && connection.State != HubConnectionState.Disconnected)
@@ -81,41 +86,53 @@ public sealed class AgentWorker(
         try
         {
             // One B/S click may produce multiple different documents (A4 guide + barcode label).
-            // Download each distinct artifact once on this workstation, then route it to the bound printer queue.
-            var localPaths = new Dictionary<Guid, string>();
-            foreach (var artifactGroup in batch.Documents.GroupBy(x => x.ArtifactId))
-            {
-                var first = artifactGroup.First();
-                var path = Path.Combine(cfg.WorkDirectory, $"{first.ArtifactId:N}.pdf");
-
-                foreach (var doc in artifactGroup)
-                    await SendStatusAsync(connection, cfg.AgentId, batch.JobId, doc, PrintTargetStatus.Downloading, null, token);
-
-                if (!File.Exists(path))
-                {
-                    var http = httpClientFactory.CreateClient("report-api");
-                    using var response = await http.GetAsync(new Uri(new Uri(cfg.ServerUrl), first.DownloadPath), HttpCompletionOption.ResponseHeadersRead, token);
-                    response.EnsureSuccessStatusCode();
-                    await using var input = await response.Content.ReadAsStreamAsync(token);
-                    await using var output = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, 128 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-                    await input.CopyToAsync(output, token);
-                }
-
-                localPaths[first.ArtifactId] = path;
-            }
+            // Distinct artifacts download in bounded parallelism; each physical printer remains serialized in its own queue.
+            var localPaths = await artifacts.DownloadAsync(
+                cfg.ServerUrl,
+                cfg.WorkDirectory,
+                cfg.MaxConcurrentDownloads,
+                batch.Documents,
+                doc => SendStatusAsync(
+                    connection,
+                    cfg.AgentId,
+                    batch.JobId,
+                    doc,
+                    PrintTargetStatus.Downloading,
+                    null,
+                    token),
+                token);
 
             foreach (var doc in batch.Documents)
             {
                 var path = localPaths[doc.ArtifactId];
-                await queues.EnqueueAsync(new PrintWorkItem(batch.JobId, doc, path, (status, message) =>
-                    SendStatusAsync(connection, cfg.AgentId, batch.JobId, doc, status, message, CancellationToken.None)), token);
+                await queues.EnqueueAsync(new PrintWorkItem(
+                    batch.JobId,
+                    doc,
+                    path,
+                    (status, message) => SendStatusAsync(
+                        connection,
+                        cfg.AgentId,
+                        batch.JobId,
+                        doc,
+                        status,
+                        message,
+                        CancellationToken.None)), token);
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to receive print batch {JobId}", batch.JobId);
             foreach (var doc in batch.Documents)
-                await SendStatusAsync(connection, cfg.AgentId, batch.JobId, doc, PrintTargetStatus.Failed, ex.Message, CancellationToken.None);
+            {
+                await SendStatusAsync(
+                    connection,
+                    cfg.AgentId,
+                    batch.JobId,
+                    doc,
+                    PrintTargetStatus.Failed,
+                    ex.Message,
+                    CancellationToken.None);
+            }
         }
     }
 
@@ -147,7 +164,10 @@ public sealed class AgentWorker(
             {
                 if (File.GetLastWriteTimeUtc(file) < cutoff) File.Delete(file);
             }
-            catch { }
+            catch
+            {
+                // A spooler or antivirus scan can temporarily retain a file; it will be retried later.
+            }
         }
     }
 }

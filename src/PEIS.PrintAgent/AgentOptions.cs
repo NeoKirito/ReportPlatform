@@ -26,8 +26,16 @@ public sealed class AgentOptions
     /// </summary>
     public Dictionary<string, string> PrinterBindings { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public int HeartbeatSeconds { get; set; } = 20;
+        public int HeartbeatSeconds { get; set; } = 20;
+
+    /// <summary>
+    /// Maximum number of different PDF artifacts downloaded concurrently for one B/S print action.
+    /// Two is sufficient for the usual A4 report plus barcode-label case while preserving workstation bandwidth.
+    /// </summary>
+    public int MaxConcurrentDownloads { get; set; } = 2;
+
     public string WorkDirectory { get; set; } = ".runtime/print-agent";
+
     public PrintBackendOptions PrintBackend { get; set; } = new();
 }
 

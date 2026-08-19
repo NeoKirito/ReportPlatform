@@ -9,6 +9,7 @@ builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent
 builder.Services.AddHttpClient("report-api");
 builder.Services.AddSingleton<AgentIdentityStore>();
 builder.Services.AddSingleton<PrinterCatalog>();
+builder.Services.AddSingleton<PrintArtifactDownloader>();
 builder.Services.AddSingleton<PrinterQueueManager>();
 
 var mode = builder.Configuration["Agent:PrintBackend:Mode"] ?? "DryRun";
