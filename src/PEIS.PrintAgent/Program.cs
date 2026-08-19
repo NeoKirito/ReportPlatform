@@ -7,6 +7,7 @@ using PEIS.PrintAgent.Services;
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent"));
 builder.Services.AddHttpClient("report-api");
+builder.Services.AddSingleton<AgentIdentityStore>();
 builder.Services.AddSingleton<PrinterCatalog>();
 builder.Services.AddSingleton<PrinterQueueManager>();
 

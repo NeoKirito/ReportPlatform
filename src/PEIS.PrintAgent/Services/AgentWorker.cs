@@ -10,6 +10,7 @@ namespace PEIS.PrintAgent.Services;
 
 public sealed class AgentWorker(
     IOptions<AgentOptions> options,
+    AgentIdentityStore identityStore,
     PrinterCatalog printers,
     PrinterQueueManager queues,
     IHttpClientFactory httpClientFactory,
@@ -18,7 +19,7 @@ public sealed class AgentWorker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var cfg = options.Value;
-        if (string.IsNullOrWhiteSpace(cfg.AgentId)) cfg.AgentId = Environment.MachineName;
+        cfg.AgentId = identityStore.GetOrCreate(cfg.AgentId);
         if (string.IsNullOrWhiteSpace(cfg.StationId)) cfg.StationId = Environment.MachineName;
         Directory.CreateDirectory(cfg.WorkDirectory);
         CleanupOldArtifacts(cfg.WorkDirectory);
@@ -72,7 +73,8 @@ public sealed class AgentWorker(
             Environment.MachineName,
             printers.GetInstalledPrinters(),
             cfg.PrinterBindings,
-            typeof(AgentWorker).Assembly.GetName().Version?.ToString() ?? "0.1.0"), token);
+            typeof(AgentWorker).Assembly.GetName().Version?.ToString() ?? "0.1.0",
+            cfg.RegistrationToken), token);
 
     private async Task HandleBatchAsync(HubConnection connection, AgentOptions cfg, PrintBatchDispatch batch, CancellationToken token)
     {

@@ -36,7 +36,8 @@ public sealed record AgentRegistration(
     string MachineName,
     IReadOnlyList<PrinterDescriptor> Printers,
     IReadOnlyDictionary<string, string> PrinterBindings,
-    string Version);
+    string Version,
+    string? RegistrationToken = null);
 
 /// <summary>
 /// Diagnostic/manual API target. Production B/S should normally call <see cref="BusinessPrintRequest"/> instead.

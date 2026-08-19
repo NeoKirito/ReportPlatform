@@ -3,7 +3,16 @@ namespace PEIS.PrintAgent;
 public sealed class AgentOptions
 {
     public string ServerUrl { get; set; } = "http://127.0.0.1:5080";
-    public string AgentId { get; set; } = Environment.MachineName;
+    /// <summary>
+    /// Optional migration override. When blank, the agent generates and persists an installation GUID under ProgramData.
+    /// </summary>
+    public string AgentId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Per-installation token provisioned by the server administrator. Leave blank only while server-side registration
+    /// authentication is disabled for backwards-compatible pilot deployments.
+    /// </summary>
+    public string? RegistrationToken { get; set; }
 
     /// <summary>
     /// Stable PEIS workstation/station code, e.g. REG-01. PEIS sends this code with a print action.

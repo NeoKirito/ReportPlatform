@@ -13,6 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 
 builder.Services.Configure<PrintRoutingOptions>(builder.Configuration.GetSection("PrintRouting"));
+builder.Services.Configure<PrintAgentSecurityOptions>(builder.Configuration.GetSection("PrintAgentSecurity"));
+builder.Services.Configure<AgentRegistryOptions>(builder.Configuration.GetSection("PrintAgentRegistry"));
 builder.Services.Configure<RenderConcurrencyOptions>(builder.Configuration.GetSection("Rendering"));
 builder.Services.Configure<ImageResolutionOptions>(builder.Configuration.GetSection("ImageResolution"));
 builder.Services.Configure<ReportEngineOptions>(builder.Configuration.GetSection("ReportEngine"));
@@ -104,6 +106,7 @@ app.MapGet("/api/print/agents", (AgentRegistry registry) => Results.Ok(registry.
     a.MachineName,
     a.Version,
     a.LastSeenAt,
+    online = true,
     a.Printers,
     a.PrinterBindings
 })));
