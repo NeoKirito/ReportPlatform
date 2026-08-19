@@ -18,5 +18,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PEIS.Report.Infrastructure.SqlServer\PEIS.Report.Infrastructure.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\PEIS.Report.FastReport.OpenSource\PEIS.Report.FastReport.OpenSource.csproj" />
+    <ProjectReference Include="..\..\src\PEIS.Report.Docx.OpenXml\PEIS.Report.Docx.OpenXml.csproj" />
   </ItemGroup>
 </Project>
