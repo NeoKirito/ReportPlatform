@@ -88,12 +88,9 @@ public sealed class LegacySqlServerIntegrationTests
             Options.Create(context.DatabaseOptions),
             new AdoNetLegacyQueryParameterBinder());
         var reportData = await dataProvider.QueryAsync(definition, request, CancellationToken.None);
-        using var watermarkTextProvider = new SqlServerWatermarkTextProvider(
-            Options.Create(new WatermarkDatabaseOptions()),
-            Options.Create(context.DatabaseOptions));
-        var watermarkText = await watermarkTextProvider.GetWatermarkTextAsync(CancellationToken.None);
-
-        var output = await new XmtmLabelDocxReportRenderer().RenderAsync(reportData, watermarkText, CancellationToken.None);
+        var frxTemplate = await new LegacyDatabaseTemplateProvider().GetRequiredAsync(definition, CancellationToken.None);
+        var compilation = new FastReportFrxDocxTemplateCompiler().Compile(frxTemplate);
+        var output = await new OpenXmlTemplateDocxRenderer().RenderAsync(compilation.Template, reportData, CancellationToken.None);
         await WriteXmtmLabelDocxAsync(output.Docx);
 
         Assert.NotEmpty(output.Docx);
@@ -104,6 +101,8 @@ public sealed class LegacySqlServerIntegrationTests
         var body = Assert.IsType<DocumentFormat.OpenXml.Wordprocessing.Body>(wordDocument.Body);
         Assert.Contains("姓名：", body.InnerText, StringComparison.Ordinal);
         Assert.Contains("科室：", body.InnerText, StringComparison.Ordinal);
+        Assert.Equal(definition.TemplateKey, compilation.Template.TemplateKey, ignoreCase: true);
+        Assert.Empty(compilation.UnsupportedObjects);
         Assert.Single(mainPart.ImageParts);
     }
 
