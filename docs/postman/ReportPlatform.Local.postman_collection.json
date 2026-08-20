@@ -1,0 +1,71 @@
+{
+  "info": {
+    "_postman_id": "dcd11faf-a5b3-4bdc-b330-59e5bba87712",
+    "name": "ReportPlatform - Local",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Local ReportPlatform verification collection. Do not export production request histories or PDF response bodies to public workspaces."
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Legacy compatibility - GetReportByJson (PDF)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json; charset=utf-8",
+            "type": "text"
+          },
+          {
+            "key": "Accept",
+            "value": "application/pdf",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pageNo\": 1,\n  \"pageSize\": 100,\n  \"djh\": {\n    \"grtjgcjjgid\": \"{{grtjgcjjgid}}\",\n    \"sfxmddid\": \"{{sfxmddid}}\"\n  },\n  \"yhmc\": \"{{yhmc}}\",\n  \"bbid\": \"{{bbid}}\",\n  \"fileName\": \"{{fileName}}\",\n  \"querytype\": \"djwh\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/Reports/GetReportByJson",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "Reports", "GetReportByJson"]
+        },
+        "description": "Successful calls return application/pdf. Use Save Response > Save to a file and do not publish test PDF files."
+      },
+      "response": []
+    },
+    {
+      "name": "Rendering diagnostics (local troubleshooting)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/internal/diagnostics/rendering",
+          "host": ["{{baseUrl}}"],
+          "path": ["internal", "diagnostics", "rendering"]
+        },
+        "description": "Local-only diagnostics. Inspect definitionSource and recentRenders after generating a report."
+      },
+      "response": []
+    }
+  ]
+}
