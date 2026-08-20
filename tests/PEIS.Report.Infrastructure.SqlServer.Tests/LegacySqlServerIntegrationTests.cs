@@ -1,8 +1,10 @@
 using System.Data;
 using System.Text.Json;
+using DocumentFormat.OpenXml.Packaging;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 using PEIS.Report.Contracts;
+using PEIS.Report.Docx.OpenXml;
 using PEIS.Report.Engine;
 using PEIS.Report.FastReport.OpenSource;
 using PEIS.Report.Infrastructure.SqlServer;
@@ -76,6 +78,57 @@ public sealed class LegacySqlServerIntegrationTests
         }
     }
 
+    [LegacySqlServerReportFixtureFact]
+    public async Task Real_xmtm_data_exports_editable_pdf_style_label_docx()
+    {
+        var context = LegacySqlServerTestContext.RequireReportFixture();
+        var request = context.CreateRequest();
+        var definition = await context.CreateDefinitionProvider().GetRequiredAsync(request, CancellationToken.None);
+        var dataProvider = new SqlServerReportDataProvider(
+            Options.Create(context.DatabaseOptions),
+            new AdoNetLegacyQueryParameterBinder());
+        var reportData = await dataProvider.QueryAsync(definition, request, CancellationToken.None);
+        var frxTemplate = await new LegacyDatabaseTemplateProvider().GetRequiredAsync(definition, CancellationToken.None);
+        var compilation = new FastReportFrxDocxTemplateCompiler().Compile(frxTemplate);
+        var output = await new OpenXmlTemplateDocxRenderer().RenderAsync(compilation.Template, reportData, CancellationToken.None);
+        await WriteXmtmLabelDocxAsync(output.Docx);
+
+        Assert.NotEmpty(output.Docx);
+        using var stream = new MemoryStream(output.Docx);
+        using var document = WordprocessingDocument.Open(stream, false);
+        var mainPart = document.MainDocumentPart ?? throw new InvalidOperationException("Generated DOCX has no main document part.");
+        var wordDocument = mainPart.Document ?? throw new InvalidOperationException("Generated DOCX has no Word document.");
+        var body = Assert.IsType<DocumentFormat.OpenXml.Wordprocessing.Body>(wordDocument.Body);
+        Assert.Contains("姓名：", body.InnerText, StringComparison.Ordinal);
+        Assert.Contains("科室：", body.InnerText, StringComparison.Ordinal);
+        Assert.Equal(definition.TemplateKey, compilation.Template.TemplateKey, ignoreCase: true);
+        Assert.Empty(compilation.UnsupportedObjects);
+        Assert.Single(mainPart.ImageParts);
+    }
+
+    [LegacySqlServerReportFixtureFact]
+    public async Task Real_xmtm_data_exports_editable_docx_with_free_openxml_renderer()
+    {
+        var context = LegacySqlServerTestContext.RequireReportFixture();
+        var request = context.CreateRequest();
+        var definition = await context.CreateDefinitionProvider().GetRequiredAsync(request, CancellationToken.None);
+        var dataProvider = new SqlServerReportDataProvider(
+            Options.Create(context.DatabaseOptions),
+            new AdoNetLegacyQueryParameterBinder());
+        var reportData = await dataProvider.QueryAsync(definition, request, CancellationToken.None);
+
+        var output = await new OpenXmlDocxReportRenderer().RenderAsync(reportData, "xmtm Word 导出试验", CancellationToken.None);
+        await WriteDocxAsync(output.Docx);
+
+        Assert.NotEmpty(output.Docx);
+        Assert.Equal(reportData.Tables.Count, output.TableCount);
+        Assert.Equal(reportData.RowCount, output.RowCount);
+        using var stream = new MemoryStream(output.Docx);
+        using var document = WordprocessingDocument.Open(stream, false);
+        Assert.NotNull(document.MainDocumentPart?.Document?.Body);
+        Assert.Contains("数据集：Master", document.MainDocumentPart!.Document.Body!.InnerText, StringComparison.Ordinal);
+    }
+
     [LegacyFastReportSmokeFact]
     public async Task Real_xmtm_frx_prepares_and_exports_pdf_with_free_fastreport_runtime()
     {
@@ -120,6 +173,26 @@ public sealed class LegacySqlServerIntegrationTests
         Assert.Contains(timings, timing => timing.Stage == "PdfExport");
         Assert.Contains(timings, timing => timing.Stage == "Total");
         await WriteFastReportEvidenceAsync(context, templateForEvidence, observation, result);
+    }
+
+    private static async Task WriteXmtmLabelDocxAsync(byte[] docx)
+    {
+        var docxPath = Environment.GetEnvironmentVariable("REPORTPLATFORM_TEST_XMTM_LABEL_DOCX_PATH");
+        if (string.IsNullOrWhiteSpace(docxPath)) return;
+
+        var directory = Path.GetDirectoryName(docxPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        await File.WriteAllBytesAsync(docxPath, docx);
+    }
+
+    private static async Task WriteDocxAsync(byte[] docx)
+    {
+        var docxPath = Environment.GetEnvironmentVariable("REPORTPLATFORM_TEST_DOCX_PATH");
+        if (string.IsNullOrWhiteSpace(docxPath)) return;
+
+        var directory = Path.GetDirectoryName(docxPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        await File.WriteAllBytesAsync(docxPath, docx);
     }
 
     private static async Task WriteFastReportPdfAsync(byte[] pdf)
