@@ -80,14 +80,17 @@ public sealed class LegacySqlServerIntegrationTests
     public async Task Real_xmtm_frx_prepares_and_exports_pdf_with_free_fastreport_runtime()
     {
         var context = LegacySqlServerTestContext.RequireReportFixture();
-        // Base-PDF smoke only: application-level watermarking remains a separate production-evidence question.
-        var request = context.CreateRequest() with { Watermark = new WatermarkOptions(Enabled: false) };
+        // The watermarked PDF smoke reads the institution name from qx_hospital without persisting the text in test output.
+        var request = context.CreateRequest();
         var definitions = context.CreateDefinitionProvider();
         var templates = new LegacyDatabaseTemplateProvider();
         // This metadata pre-read records only the decoded FRX hash; it does not persist template content or data values.
         var definitionForEvidence = await definitions.GetRequiredAsync(request, CancellationToken.None);
         var templateForEvidence = await templates.GetRequiredAsync(definitionForEvidence, CancellationToken.None);
         var telemetry = new InMemoryReportRenderTelemetry();
+        using var watermarkTextProvider = new SqlServerWatermarkTextProvider(
+            Options.Create(new WatermarkDatabaseOptions()),
+            Options.Create(context.DatabaseOptions));
         var renderer = new FastReportReportRenderer(
             new ReportDefinitionCache(),
             definitions,
@@ -95,9 +98,11 @@ public sealed class LegacySqlServerIntegrationTests
             new SqlServerReportDataProvider(Options.Create(context.DatabaseOptions), new AdoNetLegacyQueryParameterBinder()),
             new RenderConcurrencyGate(new RenderConcurrencyOptions { MaxConcurrentRenders = 1 }),
             new OpenSourceFastReportRuntime(),
+            watermarkTextProvider,
             telemetry);
 
         var result = await renderer.RenderPdfAsync(request, CancellationToken.None);
+        await WriteFastReportPdfAsync(result.Pdf);
 
         Assert.True(result.PageCount > 0, "FastReport produced no prepared pages.");
         Assert.NotEmpty(result.Pdf);
@@ -110,9 +115,21 @@ public sealed class LegacySqlServerIntegrationTests
         Assert.Contains(timings, timing => timing.Stage == "FrxLoad");
         Assert.Contains(timings, timing => timing.Stage == "RegisterData");
         Assert.Contains(timings, timing => timing.Stage == "Prepare");
+        Assert.Contains(timings, timing => timing.Stage == "WatermarkText");
+        Assert.Contains(timings, timing => timing.Stage == "Watermark");
         Assert.Contains(timings, timing => timing.Stage == "PdfExport");
         Assert.Contains(timings, timing => timing.Stage == "Total");
         await WriteFastReportEvidenceAsync(context, templateForEvidence, observation, result);
+    }
+
+    private static async Task WriteFastReportPdfAsync(byte[] pdf)
+    {
+        var pdfPath = Environment.GetEnvironmentVariable("REPORTPLATFORM_TEST_FASTREPORT_PDF_PATH");
+        if (string.IsNullOrWhiteSpace(pdfPath)) return;
+
+        var directory = Path.GetDirectoryName(pdfPath);
+        if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+        await File.WriteAllBytesAsync(pdfPath, pdf);
     }
 
     private static async Task WriteFastReportEvidenceAsync(
@@ -138,9 +155,7 @@ public sealed class LegacySqlServerIntegrationTests
             pages = result.PageCount,
             pdfBytes = result.Pdf.LongLength,
             pdfSignature = "%PDF-",
-            watermark = template.Content.Contains("<Watermark", StringComparison.OrdinalIgnoreCase)
-                ? "FRX_WATERMARK_MARKUP_PRESENT"
-                : "WATERMARK_PIPELINE_UNVERIFIED",
+            watermark = "MAINTENANCE_DATABASE_JGMC_PIPELINE_APPLIED",
             timings = observation.Timings.Select(timing => new { timing.Stage, timing.ElapsedMilliseconds })
         };
         await File.WriteAllTextAsync(evidencePath, JsonSerializer.Serialize(evidence, new JsonSerializerOptions { WriteIndented = true }));

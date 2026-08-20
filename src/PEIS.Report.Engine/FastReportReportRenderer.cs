@@ -44,6 +44,7 @@ public sealed class FastReportReportRenderer(
     IReportDataProvider data,
     RenderConcurrencyGate renderGate,
     IFastReportRuntime runtime,
+    IWatermarkTextProvider watermarkTextProvider,
     IReportRenderTelemetry telemetry) : IReportRenderer
 {
     public async Task<ReportRenderResult> RenderPdfAsync(ReportRenderRequest request, CancellationToken cancellationToken)
@@ -74,6 +75,15 @@ public sealed class FastReportReportRenderer(
         await metrics.MeasureAsync("ImageDiscovery", () => Task.CompletedTask);
         await metrics.MeasureAsync("ImageResolve", () => Task.CompletedTask);
 
+        // The maintenance database is the authority for the institution name. Ignore caller-provided text so a legacy
+        // request can only enable or disable the watermark; it cannot impersonate a different organization.
+        var watermark = request.Watermark ?? new WatermarkOptions();
+        if (watermark.Enabled)
+        {
+            var text = await metrics.MeasureAsync("WatermarkText", () => watermarkTextProvider.GetWatermarkTextAsync(cancellationToken));
+            watermark = watermark with { Text = text };
+        }
+
         FastReportPdfOutput output;
         using (await renderGate.EnterAsync(cancellationToken))
         {
@@ -83,7 +93,7 @@ public sealed class FastReportReportRenderer(
             foreach (var timing in preparation.Timings)
                 metrics.Record(timing.Stage, timing.ElapsedMilliseconds);
             await using var prepared = preparation.Document;
-            await metrics.MeasureAsync("Watermark", () => runtime.ApplyWatermarkAsync(prepared, request.Watermark ?? new WatermarkOptions(), cancellationToken));
+            await metrics.MeasureAsync("Watermark", () => runtime.ApplyWatermarkAsync(prepared, watermark, cancellationToken));
             output = await metrics.MeasureAsync("PdfExport", () => runtime.ExportPdfAsync(prepared, profile, cancellationToken));
         }
 
