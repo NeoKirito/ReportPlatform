@@ -11,7 +11,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
-  <ItemGroup>
+    <ItemGroup>
     <ProjectReference Include="..\..\src\PEIS.Report.Api\PEIS.Report.Api.csproj" />
+    <ProjectReference Include="..\..\src\PEIS.Report.Docx.OpenXml\PEIS.Report.Docx.OpenXml.csproj" />
   </ItemGroup>
+
 </Project>

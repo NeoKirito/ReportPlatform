@@ -5,7 +5,9 @@ using PEIS.Report.Api.Hubs;
 using PEIS.Report.Api.Printing;
 using PEIS.Report.Api.Storage;
 using PEIS.Report.Contracts;
+using PEIS.Report.Docx.OpenXml;
 using PEIS.Report.Engine;
+
 using PEIS.Report.FastReport.OpenSource;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -67,7 +69,11 @@ else
     builder.Services.AddSingleton<IReportRenderer, StubReportRenderer>();
 }
 builder.Services.AddSingleton<LegacyReportRequestAdapter>();
+builder.Services.AddSingleton<FastReportFrxDocxTemplateCompiler>();
+builder.Services.AddSingleton<OpenXmlTemplateDocxRenderer>();
+builder.Services.AddSingleton<IFrxDocxReportExporter, FrxDocxReportExporter>();
 builder.Services.AddSingleton<PrintJobCoordinator>();
+
 builder.Services.AddSingleton<BusinessPrintCoordinator>();
 
 var app = builder.Build();

@@ -1,8 +1,10 @@
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using PEIS.Report.Api.Compatibility;
 using PEIS.Report.Contracts;
+using PEIS.Report.Docx.OpenXml;
 using PEIS.Report.Engine;
 using Xunit;
 
@@ -30,20 +32,24 @@ public sealed class LegacyCompatibilityTests
     public void Endpoint_contract_retains_legacy_controller_action_route_and_post_method()
     {
         var controllerRoute = typeof(ReportsController).GetCustomAttribute<RouteAttribute>();
-        var method = typeof(ReportsController).GetMethod(nameof(ReportsController.GetReportByJson));
+        var pdfMethod = typeof(ReportsController).GetMethod(nameof(ReportsController.GetReportByJson));
+        var docxMethod = typeof(ReportsController).GetMethod(nameof(ReportsController.GetReportDocxByJson));
 
         Assert.NotNull(controllerRoute);
         Assert.Equal("api/[controller]/[action]", controllerRoute!.Template);
-        Assert.NotNull(method);
-        Assert.NotNull(method!.GetCustomAttribute<HttpPostAttribute>());
-        Assert.Equal("GetReportByJson", method.Name);
+        Assert.NotNull(pdfMethod);
+        Assert.NotNull(pdfMethod!.GetCustomAttribute<HttpPostAttribute>());
+        Assert.Equal("GetReportByJson", pdfMethod.Name);
+        Assert.NotNull(docxMethod);
+        Assert.NotNull(docxMethod!.GetCustomAttribute<HttpPostAttribute>());
+        Assert.Equal("GetReportDocxByJson", docxMethod.Name);
     }
 
     [Fact]
     public async Task Controller_returns_direct_pdf_file_without_json_wrapper()
     {
         using var json = JsonDocument.Parse("{\"bbid\":\"GUIDE_A4\"}");
-        var controller = new ReportsController(new FixedPdfRenderer(), new LegacyReportRequestAdapter());
+        var controller = new ReportsController(new FixedPdfRenderer(), new FixedDocxExporter(), new LegacyReportRequestAdapter());
 
         var action = await controller.GetReportByJson(json.RootElement, CancellationToken.None);
 
@@ -53,9 +59,33 @@ public sealed class LegacyCompatibilityTests
         Assert.Equal(new byte[] { 1, 2, 3 }, file.FileContents);
     }
 
+    [Fact]
+    public async Task Controller_returns_direct_docx_file_from_the_same_legacy_json_payload()
+    {
+        using var json = JsonDocument.Parse("{\"bbid\":\"GUIDE_A4\"}");
+        var controller = new ReportsController(new FixedPdfRenderer(), new FixedDocxExporter(), new LegacyReportRequestAdapter())
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var action = await controller.GetReportDocxByJson(json.RootElement, CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(action);
+        Assert.Equal("application/vnd.openxmlformats-officedocument.wordprocessingml.document", file.ContentType);
+        Assert.Equal("legacy.docx", file.FileDownloadName);
+        Assert.Equal(new byte[] { 80, 75, 3, 4 }, file.FileContents);
+        Assert.Equal("2", controller.Response.Headers["X-ReportPlatform-Docx-Unsupported-Objects"].ToString());
+    }
+
     private sealed class FixedPdfRenderer : IReportRenderer
     {
         public Task<ReportRenderResult> RenderPdfAsync(ReportRenderRequest request, CancellationToken cancellationToken)
             => Task.FromResult(new ReportRenderResult([1, 2, 3], "legacy.pdf", 1, []));
+    }
+
+    private sealed class FixedDocxExporter : IFrxDocxReportExporter
+    {
+        public Task<FrxDocxExportResult> ExportAsync(ReportRenderRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(new FrxDocxExportResult([80, 75, 3, 4], "legacy.docx", 1, 1, ["LineObject", "PictureObject"]));
     }
 }

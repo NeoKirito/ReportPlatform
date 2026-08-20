@@ -3,7 +3,7 @@
     "_postman_id": "dcd11faf-a5b3-4bdc-b330-59e5bba87712",
     "name": "ReportPlatform - Local",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Local ReportPlatform verification collection. Do not export production request histories or PDF response bodies to public workspaces."
+    "description": "Local ReportPlatform verification collection. Do not export production request histories or report response bodies to public workspaces."
   },
   "item": [
     {
@@ -24,32 +24,91 @@
       "request": {
         "method": "POST",
         "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json; charset=utf-8",
-            "type": "text"
-          },
-          {
-            "key": "Accept",
-            "value": "application/pdf",
-            "type": "text"
-          }
+          { "key": "Content-Type", "value": "application/json; charset=utf-8", "type": "text" },
+          { "key": "Accept", "value": "application/pdf", "type": "text" }
         ],
         "body": {
           "mode": "raw",
           "raw": "{\n  \"pageNo\": 1,\n  \"pageSize\": 100,\n  \"djh\": {\n    \"grtjgcjjgid\": \"{{grtjgcjjgid}}\",\n    \"sfxmddid\": \"{{sfxmddid}}\"\n  },\n  \"yhmc\": \"{{yhmc}}\",\n  \"bbid\": \"{{bbid}}\",\n  \"fileName\": \"{{fileName}}\",\n  \"querytype\": \"djwh\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
+          "options": { "raw": { "language": "json" } }
         },
         "url": {
           "raw": "{{baseUrl}}/api/Reports/GetReportByJson",
           "host": ["{{baseUrl}}"],
           "path": ["api", "Reports", "GetReportByJson"]
         },
-        "description": "Successful calls return application/pdf. Use Save Response > Save to a file and do not publish test PDF files."
+        "description": "Successful calls return application/pdf. Use Save Response > Save to a file and do not publish the PDF."
+      },
+      "response": []
+    },
+    {
+      "name": "FRX DOCX export - GetReportDocxByJson (Word)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json; charset=utf-8", "type": "text" },
+          { "key": "Accept", "value": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pageNo\": 1,\n  \"pageSize\": 100,\n  \"djh\": {\n    \"grtjgcjjgid\": \"{{grtjgcjjgid}}\",\n    \"sfxmddid\": \"{{sfxmddid}}\"\n  },\n  \"yhmc\": \"{{yhmc}}\",\n  \"bbid\": \"{{bbid}}\",\n  \"fileName\": \"{{fileName}}\",\n  \"querytype\": \"djwh\"\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/Reports/GetReportDocxByJson",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "Reports", "GetReportDocxByJson"]
+        },
+        "description": "Uses the same request payload as PDF. Save Response as .docx, then open with the local default Word/WPS application."
+      },
+      "response": []
+    },
+    {
+      "name": "PrintAgent - list local agents",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/print/agents",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "print", "agents"]
+        },
+        "description": "Copy the returned local agentId into the environment before calling manual diagnostic printing."
+      },
+      "response": []
+    },
+    {
+      "name": "Print - configured business actions",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/print/actions",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "print", "actions"]
+        },
+        "description": "Lists configured B/S action codes. Business printing must use a configured action plus stationId."
+      },
+      "response": []
+    },
+    {
+      "name": "Print - manual local diagnostic job",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json", "type": "text" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"jobName\": \"Postman-local-print\",\n  \"report\": {\n    \"reportId\": \"{{bbid}}\",\n    \"parameters\": {},\n    \"profile\": \"legacy\",\n    \"watermark\": { \"enabled\": true },\n    \"fileName\": \"{{fileName}}\",\n    \"legacyPayload\": {\n      \"pageNo\": 1,\n      \"pageSize\": 100,\n      \"djh\": {\n        \"grtjgcjjgid\": \"{{grtjgcjjgid}}\",\n        \"sfxmddid\": \"{{sfxmddid}}\"\n      },\n      \"yhmc\": \"{{yhmc}}\",\n      \"bbid\": \"{{bbid}}\",\n      \"fileName\": \"{{fileName}}\",\n      \"querytype\": \"djwh\"\n    }\n  },\n  \"targets\": [\n    {\n      \"agentId\": \"{{agentId}}\",\n      \"printerName\": \"{{printerName}}\",\n      \"copies\": 1,\n      \"duplex\": false\n    }\n  ]\n}",
+          "options": { "raw": { "language": "json" } }
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/print/jobs",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "print", "jobs"]
+        },
+        "description": "Installation and troubleshooting route. On this computer the agent currently uses DryRun, so the job returns Completed without paper output."
       },
       "response": []
     },
