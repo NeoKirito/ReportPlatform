@@ -11,10 +11,13 @@ public sealed class PrintAgentSecurityOptions
 {
     public string? RegistrationToken { get; set; }
 
-    public bool IsRegistrationAuthorized(string? suppliedToken)
+    /// <summary>Development must explicitly opt in before blank registration tokens are accepted.</summary>
+    public bool AllowInsecureDevelopment { get; set; }
+
+    public bool IsRegistrationAuthorized(string? suppliedToken, bool isProduction = false)
     {
         if (string.IsNullOrWhiteSpace(RegistrationToken))
-            return true;
+            return !isProduction && AllowInsecureDevelopment;
         if (string.IsNullOrWhiteSpace(suppliedToken))
             return false;
 

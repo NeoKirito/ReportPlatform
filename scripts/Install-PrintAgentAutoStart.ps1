@@ -12,7 +12,12 @@ param(
     [ValidatePattern('^https?://')]
     [string]$ServerUrl,
 
+    [Parameter(Mandatory = $true)]
+    [hashtable]$PrinterBindings,
+
     [string]$RegistrationToken = '',
+    [switch]$AllowInsecureHttp,
+    [switch]$AllowInsecureRegistration,
     [string]$TaskName = 'PEIS PrintAgent'
 )
 
@@ -20,6 +25,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $AgentDirectory = [IO.Path]::GetFullPath($AgentDirectory)
+if (!$AllowInsecureHttp -and !$ServerUrl.StartsWith('https://', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Production installation requires an https:// ServerUrl. Use -AllowInsecureHttp only for a controlled development test.'
+}
+if (!$AllowInsecureRegistration -and [string]::IsNullOrWhiteSpace($RegistrationToken)) {
+    throw 'Production installation requires a non-empty RegistrationToken. Use -AllowInsecureRegistration only for a controlled development test.'
+}
+if ($PrinterBindings.Count -eq 0) {
+    throw 'At least one logical PrinterBindings entry is required.'
+}
 $agentExecutable = Join-Path $AgentDirectory 'PEIS.PrintAgent.exe'
 $configPath = Join-Path $AgentDirectory 'appsettings.Production.json'
 if (!(Test-Path -LiteralPath $agentExecutable)) {
@@ -49,6 +63,7 @@ Set-JsonProperty $config.Agent 'StationId' $StationId
 # Blank causes the agent to create and retain its ProgramData installation GUID.
 Set-JsonProperty $config.Agent 'AgentId' ''
 Set-JsonProperty $config.Agent 'RegistrationToken' $RegistrationToken
+Set-JsonProperty $config.Agent 'PrinterBindings' ([pscustomobject]$PrinterBindings)
 
 $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [IO.File]::WriteAllText($configPath, ($config | ConvertTo-Json -Depth 16), $utf8NoBom)
@@ -66,3 +81,4 @@ if ($PSCmdlet.ShouldProcess("Scheduled task $TaskName", "Install PEIS PrintAgent
 Write-Host "PrintAgent configured. Station: $StationId; Task: $TaskName"
 Write-Host 'A stable agent identifier is created under ProgramData on first startup.'
 Write-Host 'The registration token is saved only in local Production configuration. Do not commit it.'
+Write-Host 'For controlled development only, -AllowInsecureHttp and -AllowInsecureRegistration explicitly opt into insecure settings.'

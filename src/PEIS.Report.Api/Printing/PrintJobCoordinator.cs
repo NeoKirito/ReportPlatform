@@ -7,15 +7,16 @@ using PEIS.Report.Engine;
 namespace PEIS.Report.Api.Printing;
 
 /// <summary>
-/// Diagnostic/manual API. It keeps explicit physical printer targets for installation/testing.
-/// Normal PEIS B/S printing should use BusinessPrintCoordinator and logical printer roles.
+/// Diagnostic/manual print path. It is protected at the endpoint and still persists target state before dispatch.
+/// Normal PEIS B/S flows use <see cref="BusinessPrintCoordinator"/> and never submit physical printer names.
 /// </summary>
 public sealed class PrintJobCoordinator(
     IReportRenderer renderer,
     IPdfArtifactStore artifacts,
     IHubContext<PrintAgentHub> hub,
     AgentRegistry registry,
-    PrintJobStateStore states)
+    PrintJobStateStore states,
+    ArtifactDownloadAuthorizer downloads)
 {
     public async Task<CreatePrintJobResponse> CreateAsync(CreatePrintJobRequest request, CancellationToken cancellationToken)
     {
@@ -31,14 +32,12 @@ public sealed class PrintJobCoordinator(
                 throw new InvalidOperationException($"Printer '{target.PrinterName}' is not registered by agent '{target.AgentId}'.");
         }
 
-        // Manual fan-out still renders the same PDF only once.
         var rendered = await renderer.RenderPdfAsync(request.Report, cancellationToken);
         var artifactId = await artifacts.SaveAsync(rendered.Pdf, rendered.FileName, cancellationToken);
         var jobId = Guid.NewGuid();
         var createdAt = DateTimeOffset.UtcNow;
         var jobName = request.JobName ?? request.Report.ReportId;
-
-        var targetStates = new List<PrintTargetResult>(request.Targets.Count);
+        var targets = new List<PrintJobTargetState>(request.Targets.Count);
         var batches = new List<(string AgentId, PrintBatchDispatch Batch)>();
 
         foreach (var group in request.Targets.GroupBy(x => x.AgentId, StringComparer.OrdinalIgnoreCase))
@@ -46,13 +45,12 @@ public sealed class PrintJobCoordinator(
             var documents = group.Select(target =>
             {
                 var targetId = Guid.NewGuid();
-                targetStates.Add(new PrintTargetResult(
-                    jobId, targetId, target.AgentId, "manual", "MANUAL", target.PrinterName, PrintTargetStatus.Queued));
-
+                var state = new PrintTargetResult(jobId, targetId, target.AgentId, "manual", "MANUAL", target.PrinterName, PrintTargetStatus.Queued);
+                targets.Add(new PrintJobTargetState(state, artifactId));
                 return new PrintDocumentDispatch(
                     targetId,
                     artifactId,
-                    $"/api/print/artifacts/{artifactId}",
+                    downloads.CreateDownloadPath(artifactId, target.AgentId),
                     "manual",
                     request.Report.ReportId,
                     "MANUAL",
@@ -60,15 +58,15 @@ public sealed class PrintJobCoordinator(
                     target.Copies,
                     target.Duplex);
             }).ToArray();
-
             batches.Add((group.Key, new PrintBatchDispatch(jobId, jobName, documents)));
         }
 
-        states.Initialize(jobId, targetStates);
-
+        await states.InitializeAsync(new PrintJobInitialization(
+            new PrintJobRecord(jobId, "MANUAL", null, string.Join(',', batches.Select(x => x.AgentId)), jobName,
+                null, createdAt, createdAt, 0, null, null), targets), cancellationToken);
         await Task.WhenAll(batches.Select(x =>
             hub.Clients.Group(PrintAgentHub.GroupName(x.AgentId)).SendAsync("PrintBatch", x.Batch, cancellationToken)));
-
+        await states.MarkDispatchedAsync(jobId, targets.Select(x => x.Result.TargetId), cancellationToken);
         return new CreatePrintJobResponse(jobId, 1, request.Targets.Count, createdAt);
     }
 }

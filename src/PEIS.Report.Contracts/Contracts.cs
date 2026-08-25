@@ -98,6 +98,7 @@ public sealed record PrintBatchDispatch(
 public enum PrintTargetStatus
 {
     Queued,
+    Dispatched,
     Downloading,
     Printing,
     Completed,

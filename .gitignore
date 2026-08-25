@@ -7,3 +7,4 @@
 *.nupkg
 artifacts/
 .runtime/
+publish/

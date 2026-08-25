@@ -8,11 +8,12 @@ namespace PEIS.Report.Api.Hubs;
 public sealed class PrintAgentHub(
     AgentRegistry registry,
     PrintJobStateStore jobs,
-    IOptions<PrintAgentSecurityOptions> security) : Hub
+    IOptions<PrintAgentSecurityOptions> security,
+    IHostEnvironment environment) : Hub
 {
     public async Task Register(AgentRegistration registration)
     {
-        if (!security.Value.IsRegistrationAuthorized(registration.RegistrationToken))
+        if (!security.Value.IsRegistrationAuthorized(registration.RegistrationToken, environment.IsProduction()))
             throw new HubException("PrintAgent registration is not authorized.");
 
         var outcome = registry.TryRegister(Context.ConnectionId, registration);
@@ -24,17 +25,19 @@ public sealed class PrintAgentHub(
 
     public Task Heartbeat(string agentId)
     {
-        registry.Touch(agentId, Context.ConnectionId);
+        if (!registry.Touch(agentId, Context.ConnectionId))
+            throw new HubException("PrintAgent heartbeat sender is not the active registered connection.");
         return Task.CompletedTask;
     }
 
-    public Task ReportResult(PrintTargetResult result)
+    public async Task ReportResult(PrintTargetResult result)
     {
         if (!registry.IsCurrentConnection(result.AgentId, Context.ConnectionId))
             throw new HubException("PrintAgent result sender is not the active registered connection.");
 
-        jobs.Update(result);
-        return Task.CompletedTask;
+        var transition = await jobs.UpdateAsync(result, Context.ConnectionAborted);
+        if (!transition.Applied)
+            throw new HubException(transition.Reason ?? "Print job result was rejected.");
     }
 
     public override Task OnDisconnectedAsync(Exception? exception)

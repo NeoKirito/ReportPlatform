@@ -15,13 +15,19 @@
   "PrintAgentSecurity": {
     "RegistrationToken": "<由运维生成并安全下发的令牌>"
   },
+  "InternalApiSecurity": {
+    "AccessToken": "<管理接口令牌>"
+  },
+  "ArtifactAccess": {
+    "SigningKey": "<高熵制品 URL 签名密钥>"
+  },
   "PrintAgentRegistry": {
     "OfflineAfterSeconds": 90
   }
 }
 ```
 
-空令牌仅用于兼容旧联调环境。正式现场必须设置非空令牌，并使用 HTTPS 服务地址。
+空令牌仅能在明确 Opt-In 的开发环境使用。生产环境会拒绝空注册令牌与未签名制品下载；正式现场必须使用非空令牌、非空制品签名密钥和 HTTPS 服务地址。
 
 ## 二、每台工作站安装
 
@@ -32,7 +38,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-PrintAgentAutoStar
   -AgentDirectory 'C:\PEIS\PrintAgent' `
   -StationId 'REG-01' `
   -ServerUrl 'https://<报告服务地址>' `
-  -RegistrationToken '<本机受控令牌>'
+  -RegistrationToken '<本机受控令牌>' `
+  -PrinterBindings @{ 'A4_GUIDE' = 'HP LaserJet A4'; 'BARCODE' = 'TSC TE244' }
 ```
 
 脚本会写入该电脑本地的 `appsettings.Production.json`，并创建名为 `PEIS PrintAgent` 的“用户登录后自动启动”计划任务。首次启动时，代理会在 `%ProgramData%\PEIS\PrintAgent\agent-id.txt` 自动生成稳定 GUID。不要手工复制此文件到另一台电脑。
@@ -51,6 +58,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-PrintAgentAutoStar
 
 ```text
 GET /api/print/agents
+X-PEIS-Internal-Token: <管理接口令牌>
 ```
 
 应能看到该站点的 `agentId`、`stationId`、计算机名、版本、心跳时间、已安装打印机与逻辑绑定。若同一 `StationId` 被另一台在线电脑占用，新代理会被拒绝注册而不会覆盖旧工作站；应先排查旧电脑、关闭重复任务或分配新的站点码。
@@ -59,4 +67,4 @@ GET /api/print/agents
 
 ## 四、运维说明
 
-代理已具备自动重连、20 秒默认心跳、每物理打印机本地串行队列和有限重试。API 会在默认 90 秒未收到心跳后将该代理视为离线并停止路由。当前代理在线表与打印任务回执仍为单 API 实例内存状态；后续高可用部署应将其迁移到共享持久化存储，并引入代理管理界面、安装包和受控升级。
+代理具备自动重连、20 秒默认心跳、每物理打印机本地串行队列和有限重试。API 会在默认 90 秒未收到心跳后将代理视为离线并停止路由。打印任务、目标状态与幂等键保存在 API 本机 SQLite 状态库中，API 重启后可恢复；在线连接状态会由 Agent 自动重新注册恢复。部署包不提供多节点共享状态，横向扩展前必须替换为共享、受控的持久化实现。

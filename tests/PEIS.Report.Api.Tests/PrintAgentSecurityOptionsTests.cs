@@ -9,12 +9,16 @@ public sealed class PrintAgentSecurityOptionsTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Empty_server_token_keeps_pilot_registration_compatible(string? token)
+    public void Empty_server_token_requires_explicit_development_opt_in(string? token)
     {
-        var options = new PrintAgentSecurityOptions { RegistrationToken = token };
+        var strict = new PrintAgentSecurityOptions { RegistrationToken = token };
+        Assert.False(strict.IsRegistrationAuthorized(null));
+        Assert.False(strict.IsRegistrationAuthorized("any-value"));
 
-        Assert.True(options.IsRegistrationAuthorized(null));
-        Assert.True(options.IsRegistrationAuthorized("any-value"));
+        var development = new PrintAgentSecurityOptions { RegistrationToken = token, AllowInsecureDevelopment = true };
+        Assert.True(development.IsRegistrationAuthorized(null));
+        Assert.True(development.IsRegistrationAuthorized("any-value"));
+        Assert.False(development.IsRegistrationAuthorized("any-value", isProduction: true));
     }
 
     [Fact]

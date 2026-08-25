@@ -14,6 +14,10 @@ builder.Services.AddControllers();
 
 builder.Services.Configure<PrintRoutingOptions>(builder.Configuration.GetSection("PrintRouting"));
 builder.Services.Configure<PrintAgentSecurityOptions>(builder.Configuration.GetSection("PrintAgentSecurity"));
+builder.Services.Configure<InternalApiSecurityOptions>(builder.Configuration.GetSection("InternalApiSecurity"));
+builder.Services.Configure<ArtifactAccessOptions>(builder.Configuration.GetSection("ArtifactAccess"));
+builder.Services.Configure<PrintPersistenceOptions>(builder.Configuration.GetSection("PrintPersistence"));
+builder.Services.Configure<PdfArtifactStoreOptions>(builder.Configuration.GetSection("PdfArtifactStore"));
 builder.Services.Configure<AgentRegistryOptions>(builder.Configuration.GetSection("PrintAgentRegistry"));
 builder.Services.Configure<RenderConcurrencyOptions>(builder.Configuration.GetSection("Rendering"));
 builder.Services.Configure<ImageResolutionOptions>(builder.Configuration.GetSection("ImageResolution"));
@@ -28,7 +32,10 @@ builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddSingleton<PrintJobStateStore>();
 builder.Services.AddSingleton<PrintRequestIdempotencyStore>();
 builder.Services.AddSingleton<PrintScenarioCatalog>();
+builder.Services.AddSingleton<InternalApiAuthorization>();
+builder.Services.AddSingleton<ArtifactDownloadAuthorizer>();
 builder.Services.AddSingleton<IPdfArtifactStore, LocalPdfArtifactStore>();
+builder.Services.AddHostedService<PdfArtifactCleanupService>();
 builder.Services.AddSingleton<ReportDefinitionCache>();
 var definitionSource = builder.Configuration.GetValue<string>("ReportEngine:DefinitionSource") ?? "Deterministic";
 if (string.Equals(definitionSource, "LegacySqlServer", StringComparison.OrdinalIgnoreCase))
@@ -74,32 +81,43 @@ app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "PEIS.Report.Api" }));
 app.MapGet("/internal/diagnostics/rendering", (
+    HttpContext context,
+    InternalApiAuthorization authorization,
     ReportDefinitionCache definitions,
     RenderConcurrencyGate gate,
     InMemoryReportRenderTelemetry telemetry,
-    IOptions<ReportEngineOptions> engineOptions) => Results.Ok(new
+    IOptions<ReportEngineOptions> engineOptions) =>
+{
+    if (!authorization.IsAuthorized(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    return Results.Ok(new
 {
     definitionSource = engineOptions.Value.DefinitionSource,
     definitionCache = definitions.Snapshot(),
     renderConcurrency = gate.Snapshot(),
     recentRenders = telemetry.Snapshot()
-}));
-app.MapPost("/internal/cache/reports/{reportId}/invalidate", (string reportId, ReportDefinitionCache definitions) =>
+});
+});
+app.MapPost("/internal/cache/reports/{reportId}/invalidate", (HttpContext context, InternalApiAuthorization authorization, string reportId, ReportDefinitionCache definitions) =>
 {
+    if (!authorization.IsAuthorized(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
     var removed = definitions.InvalidateReport(reportId);
     return Results.Ok(new { reportId, removed });
 });
 
 // New typed endpoint retained for diagnostics/new integrations only. Existing PEIS callers
 // should continue to use POST /api/Reports/GetReportByJson with their original JSON body.
-app.MapPost("/internal/reports/pdf", async (ReportRenderRequest request, IReportRenderer renderer, CancellationToken ct) =>
+app.MapPost("/internal/reports/pdf", async (HttpContext context, InternalApiAuthorization authorization, ReportRenderRequest request, IReportRenderer renderer, CancellationToken ct) =>
 {
+    if (!authorization.IsAuthorized(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
     var result = await renderer.RenderPdfAsync(request, ct);
     return Results.File(result.Pdf, "application/pdf", result.FileName, enableRangeProcessing: false);
 });
 
 // Installation/admin visibility. Normal B/S pages do not need to enumerate printers.
-app.MapGet("/api/print/agents", (AgentRegistry registry) => Results.Ok(registry.Snapshot().Select(a => new
+app.MapGet("/api/print/agents", (HttpContext context, InternalApiAuthorization authorization, AgentRegistry registry) =>
+{
+    if (!authorization.IsAuthorized(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    return Results.Ok(registry.Snapshot().Select(a => new
 {
     a.AgentId,
     a.StationId,
@@ -109,7 +127,8 @@ app.MapGet("/api/print/agents", (AgentRegistry registry) => Results.Ok(registry.
     online = true,
     a.Printers,
     a.PrinterBindings
-})));
+}));
+});
 
 app.MapGet("/api/print/actions", (PrintScenarioCatalog catalog) => Results.Ok(catalog.Snapshot().Select(x => new
 {
@@ -126,23 +145,27 @@ app.MapPost("/api/print/actions", async (BusinessPrintRequest request, BusinessP
 });
 
 // Diagnostic/manual API retained for installation and troubleshooting only.
-app.MapPost("/api/print/jobs", async (CreatePrintJobRequest request, PrintJobCoordinator coordinator, CancellationToken ct) =>
+app.MapPost("/api/print/jobs", async (HttpContext context, InternalApiAuthorization authorization, CreatePrintJobRequest request, PrintJobCoordinator coordinator, CancellationToken ct) =>
 {
+    if (!authorization.IsAuthorized(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
     var result = await coordinator.CreateAsync(request, ct);
     return Results.Accepted($"/api/print/jobs/{result.JobId}", result);
 });
 
-app.MapGet("/api/print/jobs/{jobId:guid}", (Guid jobId, PrintJobStateStore states) =>
+app.MapGet("/api/print/jobs/{jobId:guid}", async (HttpContext context, InternalApiAuthorization authorization, Guid jobId, PrintJobStateStore states, CancellationToken ct) =>
 {
-    var state = states.Get(jobId);
+    if (!authorization.IsAuthorized(context)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    var state = await states.GetAsync(jobId, ct);
     return state is null ? Results.NotFound() : Results.Ok(state);
 });
 
-app.MapGet("/api/print/artifacts/{artifactId:guid}", async (Guid artifactId, IPdfArtifactStore artifacts, CancellationToken ct) =>
+app.MapGet("/api/print/artifacts/{artifactId:guid}", async (Guid artifactId, string? agentId, long expires, string? signature, ArtifactDownloadAuthorizer authorization, PrintJobStateStore states, IPdfArtifactStore artifacts, CancellationToken ct) =>
 {
+    if (!authorization.IsAuthorized(artifactId, agentId, expires, signature)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    if (!await states.IsArtifactAuthorizedForAgentAsync(artifactId, agentId!, ct)) return Results.StatusCode(StatusCodes.Status403Forbidden);
     var artifact = await artifacts.OpenAsync(artifactId, ct);
     if (artifact is null) return Results.NotFound();
-    return Results.File(artifact.Stream, "application/pdf", artifact.FileName, enableRangeProcessing: true);
+    return Results.File(artifact.Stream, "application/pdf", artifact.FileName, enableRangeProcessing: false);
 });
 
 app.MapHub<PrintAgentHub>("/hubs/print-agent");

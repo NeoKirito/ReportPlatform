@@ -3,6 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\PEIS.Report.Contracts\PEIS.Report.Contracts.csproj" />
     <ProjectReference Include="..\PEIS.Report.Engine\PEIS.Report.Engine.csproj" />
     <ProjectReference Include="..\PEIS.Report.FastReport.OpenSource\PEIS.Report.FastReport.OpenSource.csproj" />

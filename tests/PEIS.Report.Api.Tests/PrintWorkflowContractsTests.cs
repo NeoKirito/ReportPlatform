@@ -44,7 +44,11 @@ public sealed class PrintWorkflowContractsTests
     [Fact]
     public async Task Same_business_idempotency_key_creates_one_job()
     {
-        var store = new PrintRequestIdempotencyStore();
+        var databasePath = Path.Combine(Path.GetTempPath(), $"print-state-{Guid.NewGuid():N}.db");
+        try
+        {
+        var stateStore = new PrintJobStateStore(databasePath);
+        var store = new PrintRequestIdempotencyStore(stateStore, Options.Create(new PrintPersistenceOptions()));
         var calls = 0;
         Task<CreatePrintJobResponse> CreateAsync()
         {
@@ -57,6 +61,11 @@ public sealed class PrintWorkflowContractsTests
 
         Assert.Equal(1, calls);
         Assert.Single(responses.Select(response => response.JobId).Distinct());
+        }
+        finally
+        {
+            foreach (var file in Directory.EnumerateFiles(Path.GetDirectoryName(databasePath)!, $"{Path.GetFileName(databasePath)}*")) File.Delete(file);
+        }
     }
 
     [Fact]
