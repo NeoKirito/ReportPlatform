@@ -14,4 +14,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PEIS.Report.Api\PEIS.Report.Api.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Compile the unmodified DryRun queue sources under net10.0 so their no-spooler contract is exercised on CI. -->
+    <Compile Include="..\..\src\PEIS.PrintAgent\AgentOptions.cs" Link="PrintAgent\AgentOptions.cs" />
+    <Compile Include="..\..\src\PEIS.PrintAgent\Printing\IPrintBackend.cs" Link="PrintAgent\IPrintBackend.cs" />
+    <Compile Include="..\..\src\PEIS.PrintAgent\Printing\DryRunPrintBackend.cs" Link="PrintAgent\DryRunPrintBackend.cs" />
+    <Compile Include="..\..\src\PEIS.PrintAgent\Printing\PrinterQueueManager.cs" Link="PrintAgent\PrinterQueueManager.cs" />
+  </ItemGroup>
 </Project>

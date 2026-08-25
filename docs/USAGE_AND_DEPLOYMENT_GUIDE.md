@@ -166,7 +166,7 @@ $env:LegacyReportSchema__TemplateKeyPrefix = 'legacy-djwh'
 {
   "Agent": {
     "ServerUrl": "https://<受控内网报告服务地址>",
-    "AgentId": "<稳定的工作站代理编号>",
+    "AgentId": "",
     "StationId": "REG-01",
     "PrinterBindings": {
       "A4_GUIDE": "<本机 A4 打印机名称>",
@@ -213,10 +213,12 @@ dotnet test PEIS.ReportPlatform.sln -c Release --no-build
 ### 6.3 发布 API
 
 ```powershell
-dotnet publish src/PEIS.Report.Api/PEIS.Report.Api.csproj -c Release -o .\publish\report-api
+.\scripts\Build-Release.ps1 -Clean
+# API: publish\report-api\ (win-x64 framework-dependent)
+# Agent: publish\print-agent\ (win-x64 self-contained)
 ```
 
-将发布目录部署到受控 Windows Server 或经本地验收的运行环境。为运行身份授予应用内容目录和 `.runtime` 子目录的最小读写权限。静默打印制品会落在 `<ContentRoot>\.runtime\pdf-artifacts`；当前实现不自动清理该服务器制品目录，因此生产上线前必须制定容量、保留期和安全清理策略。
+将发布目录部署到受控 Windows Server 或经本地验收的运行环境。为运行身份授予应用内容目录和 `.runtime` 子目录的最小读写权限。静默打印制品落在 `<ContentRoot>\.runtime\pdf-artifacts`；当前实现会在启动和周期任务中按保留期、容量与活动任务保护执行清理。生产上线前仍必须制定容量、保留期、访问控制和现场证据策略。
 
 先在受控内网前台运行确认配置：
 
@@ -231,7 +233,8 @@ dotnet .\PEIS.Report.Api.dll
 ### 6.4 发布 PrintAgent
 
 ```powershell
-dotnet publish src/PEIS.PrintAgent/PEIS.PrintAgent.csproj -c Release -r win-x64 --self-contained false -o .\publish\print-agent
+# Build-Release.ps1 produces a self-contained win-x64 PrintAgent.
+# Keep AgentId blank: the agent persists its stable installation GUID in %ProgramData%\PEIS\PrintAgent\agent-id.txt.
 ```
 
 在每个工作站把已审批配置置于发布目录或受保护外部配置位置，先以前台方式启动：
@@ -241,7 +244,7 @@ Set-Location .\publish\print-agent
 .\PEIS.PrintAgent.exe
 ```
 
-验证 Agent 出现在 `GET /api/print/agents` 后，执行 `DryRun` 打印动作。当前代码的 Agent 是长期运行的 Generic Host，但未提供受测的 Windows Service 安装脚本；将其注册为服务、任务计划或第三方守护进程属于现场部署工作，必须单独验收运行账户、网络、打印机访问权限和崩溃重启策略。
+验证 Agent 出现在受保护的 Agent 状态接口后，执行仅合成数据的 `DryRun` 动作。使用 `scripts/Install-PrintAgentAutoStart.ps1` 安装用户登录计划任务；脚本要求 HTTPS、非空注册令牌和显式逻辑打印机绑定。使用 `scripts/Uninstall-PrintAgentAutoStart.ps1` 回滚时默认保留 AgentId 和本机状态，只有显式参数才删除它们。运行账户、网络、打印机访问权限和崩溃重启策略仍属于现场验收。
 
 ## 7. 上线验收顺序
 
