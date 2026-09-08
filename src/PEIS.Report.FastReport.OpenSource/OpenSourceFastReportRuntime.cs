@@ -13,9 +13,16 @@ namespace PEIS.Report.FastReport.OpenSource;
 /// MIT-licensed FastReport Open Source implementation. Mutable <see cref="Report"/> instances are created for one
 /// render request only and are retained only by the corresponding prepared-document handle.
 /// </summary>
-public sealed class OpenSourceFastReportRuntime : IFastReportRuntime
+public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = null) : IFastReportRuntime
 {
-    public Task<FastReportRuntimePreparation> PrepareAsync(
+    public static void WarmupCompiler() => Config.CompilerWarmup();
+
+    internal static int ResolveImageDpi(PdfExportProfile profile)
+        => profile.IsLabel || profile.IntendedForPrint || string.Equals(profile.Name, "archive", StringComparison.OrdinalIgnoreCase)
+            ? 300
+            : string.Equals(profile.Name, "screen", StringComparison.OrdinalIgnoreCase) ? 150 : 200;
+
+    public async Task<FastReportRuntimePreparation> PrepareAsync(
         FastReportRenderContext context,
         CancellationToken cancellationToken)
     {
@@ -25,8 +32,14 @@ public sealed class OpenSourceFastReportRuntime : IFastReportRuntime
         var report = new FastReportReport();
         try
         {
+            var (normalizedTemplate, emptyDataPageNames) = LegacyFrxCompatibility.GetNormalizedWithEmptyPages(
+                context.Template.Content,
+                context.Data.Tables);
+            ReportImagePreparation.Result? images = null;
+            if (imageResolver is not null)
+                images = await ReportImagePreparation.PrepareAsync(normalizedTemplate, context.Data.Tables, imageResolver, cancellationToken).ConfigureAwait(false);
             var frxLoad = Stopwatch.StartNew();
-            report.LoadFromString(context.Template.Content);
+            report.LoadFromString(images?.Template ?? normalizedTemplate);
             frxLoad.Stop();
 
             var registerData = Stopwatch.StartNew();
@@ -42,21 +55,41 @@ public sealed class OpenSourceFastReportRuntime : IFastReportRuntime
 
             cancellationToken.ThrowIfCancellationRequested();
             var prepare = Stopwatch.StartNew();
+            SuppressTrailingEmptyPages(report, emptyDataPageNames);
             report.Prepare();
+            var exportedPageCount = report.PreparedPages.Count;
             prepare.Stop();
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new FastReportRuntimePreparation(
-                new OpenSourceFastReportPreparedDocument(report),
+            return new FastReportRuntimePreparation(
+                new OpenSourceFastReportPreparedDocument(report, exportedPageCount),
                 [
+                    new ReportStageTiming("ImageResolve", images?.Batch.ElapsedMilliseconds ?? 0),
                     new ReportStageTiming("FrxLoad", frxLoad.ElapsedMilliseconds),
                     new ReportStageTiming("RegisterData", registerData.ElapsedMilliseconds),
                     new ReportStageTiming("Prepare", prepare.ElapsedMilliseconds)
-                ]));
+                ]) { Images = images?.Batch };
         }
         catch
         {
             report.Dispose();
             throw;
+        }
+    }
+
+    private static void SuppressTrailingEmptyPages(
+        FastReportReport report,
+        IReadOnlySet<string> emptyDataPageNames)
+    {
+        if (emptyDataPageNames.Count == 0)
+            return;
+
+        for (var index = report.Pages.Count - 1; index >= 0; index--)
+        {
+            if (report.Pages[index] is not ReportPage page || !emptyDataPageNames.Contains(page.Name))
+                break;
+            // Exclude the optional page before Prepare so TotalPages matches the
+            // exported PDF; trimming prepared pages afterwards leaves stale footers.
+            page.Visible = false;
         }
     }
 
@@ -77,7 +110,7 @@ public sealed class OpenSourceFastReportRuntime : IFastReportRuntime
         var text = watermark.Text.Trim();
         var alpha = (int)Math.Round(Math.Clamp(watermark.Opacity, 0d, 1d) * byte.MaxValue, MidpointRounding.AwayFromZero);
         var rotation = watermark.Angle < 0 ? WatermarkTextRotation.ForwardDiagonal : WatermarkTextRotation.BackwardDiagonal;
-        for (var index = 0; index < document.Report.PreparedPages.Count; index++)
+        for (var index = 0; index < document.ExportedPageCount; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             using var page = document.Report.PreparedPages.GetPage(index);
@@ -111,17 +144,29 @@ public sealed class OpenSourceFastReportRuntime : IFastReportRuntime
             throw new ArgumentException("Prepared document was not created by FastReport Open Source runtime.", nameof(prepared));
 
         using var stream = new MemoryStream();
-        using var exporter = new PDFSimpleExport();
+        using var exporter = new PDFSimpleExport
+        {
+            ImageDpi = ResolveImageDpi(profile),
+            JpegQuality = profile.JpegQuality
+        };
+        if (document.ExportedPageCount < document.Report.PreparedPages.Count)
+        {
+            exporter.PageRange = PageRange.PageNumbers;
+            exporter.PageNumbers = $"1-{document.ExportedPageCount}";
+        }
         document.Report.Export(exporter, stream);
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new FastReportPdfOutput(stream.ToArray(), document.Report.PreparedPages.Count));
+        return Task.FromResult(new FastReportPdfOutput(stream.ToArray(), document.ExportedPageCount));
     }
 
-    private sealed class OpenSourceFastReportPreparedDocument(FastReportReport report) : IFastReportPreparedDocument
+    private sealed class OpenSourceFastReportPreparedDocument(
+        FastReportReport report,
+        int exportedPageCount) : IFastReportPreparedDocument
     {
         private int _disposed;
 
         public FastReportReport Report { get; } = report;
+        public int ExportedPageCount { get; } = exportedPageCount;
 
         public ValueTask DisposeAsync()
         {

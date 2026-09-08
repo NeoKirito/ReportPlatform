@@ -5,8 +5,8 @@ namespace PEIS.Report.Engine;
 
 public sealed class RenderConcurrencyOptions
 {
-    /// <summary>Conservative default for CPU- and memory-heavy FastReport preparation.</summary>
-    public int MaxConcurrentRenders { get; set; } = 2;
+    /// <summary>Default for CPU- and memory-heavy FastReport preparation. Scale with available CPU cores.</summary>
+    public int MaxConcurrentRenders { get; set; } = 4;
 }
 
 /// <summary>

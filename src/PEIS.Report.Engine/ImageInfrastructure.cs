@@ -7,8 +7,9 @@ namespace PEIS.Report.Engine;
 public sealed class ImageResolutionOptions
 {
     public int MaxConcurrentFetches { get; set; } = 4;
-    public int TimeoutSeconds { get; set; } = 15;
+    public int TimeoutSeconds { get; set; } = 3;
     public int MaxCachedItems { get; set; } = 256;
+    public int FailureCacheSeconds { get; set; } = 300;
 }
 
 public sealed record ResolvedImage(
@@ -31,6 +32,61 @@ public interface IImageResolver
 }
 
 /// <summary>
+/// LRU byte[] cache with thread-safe access. Evicts least-recently-used entries when capacity is reached.
+/// </summary>
+internal sealed class LruImageCache
+{
+    private readonly int _capacity;
+    private readonly Dictionary<string, LinkedListNode<(string Key, byte[] Value)>> _map = new(StringComparer.Ordinal);
+    private readonly LinkedList<(string Key, byte[] Value)> _order = new();
+    private readonly object _lock = new();
+
+    public LruImageCache(int capacity) => _capacity = Math.Max(1, capacity);
+
+    public byte[]? Get(string key)
+    {
+        lock (_lock)
+        {
+            if (_map.TryGetValue(key, out var node))
+            {
+                _order.Remove(node);
+                _order.AddLast(node);
+                return node.Value.Value;
+            }
+            return null;
+        }
+    }
+
+    public void Add(string key, byte[] value)
+    {
+        lock (_lock)
+        {
+            if (_map.TryGetValue(key, out var existing))
+            {
+                _order.Remove(existing);
+                existing.Value = (key, value);
+                _order.AddLast(existing);
+                return;
+            }
+            if (_map.Count >= _capacity)
+            {
+                var oldest = _order.First;
+                if (oldest is not null)
+                {
+                    _order.RemoveFirst();
+                    _map.Remove(oldest.Value.Key);
+                }
+            }
+            var node = new LinkedListNode<(string, byte[])>((key, value));
+            _order.AddLast(node);
+            _map[key] = node;
+        }
+    }
+
+    public int Count { get { lock (_lock) { return _map.Count; } } }
+}
+
+/// <summary>
 /// Reuses a single HttpClient, deduplicates requested URLs before fetching, and bounds concurrent I/O. The cache
 /// stores immutable byte arrays by canonical URI; a FastReport integration may consume these bytes before Prepare.
 /// </summary>
@@ -39,7 +95,8 @@ public sealed class ImageResolver : IImageResolver
     private readonly HttpClient _httpClient;
     private readonly ImageResolutionOptions _options;
     private readonly SemaphoreSlim _gate;
-    private readonly ConcurrentDictionary<string, byte[]> _cache = new(StringComparer.Ordinal);
+    private readonly LruImageCache _cache;
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _failureCache = new(StringComparer.Ordinal);
 
     public ImageResolver(HttpClient httpClient, ImageResolutionOptions options)
     {
@@ -49,6 +106,9 @@ public sealed class ImageResolver : IImageResolver
             throw new ArgumentOutOfRangeException(nameof(options.MaxConcurrentFetches));
         if (_options.TimeoutSeconds is < 1 or > 120)
             throw new ArgumentOutOfRangeException(nameof(options.TimeoutSeconds));
+        if (_options.FailureCacheSeconds is < 1 or > 86400)
+            throw new ArgumentOutOfRangeException(nameof(options.FailureCacheSeconds));
+        _cache = new LruImageCache(_options.MaxCachedItems);
         _gate = new SemaphoreSlim(_options.MaxConcurrentFetches, _options.MaxConcurrentFetches);
     }
 
@@ -102,32 +162,55 @@ public sealed class ImageResolver : IImageResolver
     private async Task<ResolvedImage> ResolveOneAsync(Uri source, CancellationToken cancellationToken)
     {
         var key = source.AbsoluteUri;
-        if (_cache.TryGetValue(key, out var cached))
+        var cached = _cache.Get(key);
+        if (cached is not null)
             return new ResolvedImage(key, cached, Hash(cached), true, 0);
+        ThrowIfRecentlyFailed(key);
 
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (_cache.TryGetValue(key, out cached))
+            cached = _cache.Get(key);
+            if (cached is not null)
                 return new ResolvedImage(key, cached, Hash(cached), true, 0);
+            ThrowIfRecentlyFailed(key);
 
-            var timer = Stopwatch.StartNew();
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
-            using var response = await _httpClient.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            var bytes = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
-            timer.Stop();
+            try
+            {
+                var timer = Stopwatch.StartNew();
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
+                using var response = await _httpClient.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+                response.EnsureSuccessStatusCode();
+                var bytes = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
+                timer.Stop();
 
-            if (_cache.Count >= _options.MaxCachedItems)
-                _cache.TryRemove(_cache.Keys.OrderBy(key => key, StringComparer.Ordinal).FirstOrDefault() ?? string.Empty, out _);
-            _cache.TryAdd(key, bytes);
-            return new ResolvedImage(key, bytes, Hash(bytes), false, timer.ElapsedMilliseconds);
+                _cache.Add(key, bytes);
+                _failureCache.TryRemove(key, out _);
+                return new ResolvedImage(key, bytes, Hash(bytes), false, timer.ElapsedMilliseconds);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                _failureCache[key] = DateTimeOffset.UtcNow.AddSeconds(_options.FailureCacheSeconds);
+                throw;
+            }
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    private void ThrowIfRecentlyFailed(string key)
+    {
+        if (!_failureCache.TryGetValue(key, out var expiresAt)) return;
+        if (expiresAt > DateTimeOffset.UtcNow)
+            throw new HttpRequestException($"Image source '{key}' is temporarily unavailable (cached failure).");
+        _failureCache.TryRemove(key, out _);
     }
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
