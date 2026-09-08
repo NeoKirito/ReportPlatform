@@ -8,7 +8,7 @@ public sealed class ImageResolutionOptions
 {
     public int MaxConcurrentFetches { get; set; } = 12;
     public int TimeoutSeconds { get; set; } = 3;
-    public int TimeoutMilliseconds { get; set; } = 300;
+    public int TimeoutMilliseconds { get; set; } = 150;
     public int MaxCachedItems { get; set; } = 1024;
     public int FailureCacheSeconds { get; set; } = 3600;
 
