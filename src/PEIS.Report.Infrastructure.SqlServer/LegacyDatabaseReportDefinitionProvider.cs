@@ -13,7 +13,7 @@ public sealed class ReportDatabaseOptions
     public string Provider { get; set; } = "SqlServer";
     public string ConnectionString { get; set; } = string.Empty;
     public int CommandTimeoutSeconds { get; set; } = 30;
-    public int DefinitionCacheTtlSeconds { get; set; } = 300;
+    public int DefinitionCacheTtlSeconds { get; set; } = 3600;
 }
 
 /// <summary>
@@ -33,6 +33,13 @@ public sealed class LegacyReportSchemaMapping
     public string TemplateContentEncoding { get; set; } = "Raw";
     /// <summary>Optional evidence-backed DataTable name required by the FRX for the first SQL result set.</summary>
     public string? FirstResultSetTableName { get; set; }
+    /// <summary>
+    /// Optional column used to order definition rows whose ids start with the main report id plus an underscore.
+    /// When configured, their SQL is loaded as Master1, Master2, and so on for legacy multi-table FRX templates.
+    /// </summary>
+    public string? SupplementalQueryOrderColumn { get; set; }
+    /// <summary>Optional column used to match reports by their human-readable name or alias.</summary>
+    public string? ReportNameColumn { get; set; } = "djmc";
     public string TemplateKeyPrefix { get; set; } = "legacy-db";
 
     public void Validate()
@@ -43,6 +50,8 @@ public sealed class LegacyReportSchemaMapping
         ValidateIdentifier(SqlColumn, nameof(SqlColumn));
         if (!string.IsNullOrWhiteSpace(VersionColumn)) ValidateIdentifier(VersionColumn, nameof(VersionColumn));
         if (!string.IsNullOrWhiteSpace(UpdatedAtColumn)) ValidateIdentifier(UpdatedAtColumn, nameof(UpdatedAtColumn));
+        if (!string.IsNullOrWhiteSpace(ReportNameColumn)) ValidateIdentifier(ReportNameColumn, nameof(ReportNameColumn));
+        if (!string.IsNullOrWhiteSpace(SupplementalQueryOrderColumn)) ValidateIdentifier(SupplementalQueryOrderColumn, nameof(SupplementalQueryOrderColumn));
         if (!string.Equals(TemplateContentEncoding, "Raw", StringComparison.OrdinalIgnoreCase) && !string.Equals(TemplateContentEncoding, "Base64Utf8", StringComparison.OrdinalIgnoreCase))
             throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.SchemaMappingUnverified, "Legacy schema mapping option 'TemplateContentEncoding' must be Raw or Base64Utf8.");
     }
@@ -83,7 +92,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
         var selected = VersionExpression();
         if (selected is null)
         {
-            var seconds = Math.Clamp(_database.DefinitionCacheTtlSeconds, 1, 3600);
+            var seconds = Math.Clamp(_database.DefinitionCacheTtlSeconds, 1, 86400);
             var now = _clock.GetUtcNow();
             var bucket = now.ToUnixTimeSeconds() / seconds;
             return new ReportDefinitionVersion($"ttl:{bucket}", false, now.AddSeconds(seconds), "ttl-fallback-unverified-schema");
@@ -95,7 +104,10 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
             command.CommandTimeout = TimeoutSeconds();
-            command.CommandText = $"SELECT {selected} FROM {_schema.DefinitionTable} WHERE {_schema.ReportIdColumn} = @reportId";
+            var nameCondition = string.IsNullOrWhiteSpace(_schema.ReportNameColumn)
+                ? string.Empty
+                : $" OR {_schema.ReportNameColumn} = @reportId";
+            command.CommandText = $"SELECT TOP 1 {selected} FROM {_schema.DefinitionTable} WHERE {_schema.ReportIdColumn} = @reportId{nameCondition} ORDER BY CASE WHEN {_schema.ReportIdColumn} = @reportId THEN 0 ELSE 1 END";
             command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = resolution.DefinitionId });
             var scalar = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (scalar is null || scalar is DBNull)
@@ -132,17 +144,23 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.ReportNotFound, $"Legacy report definition '{resolution.DefinitionId}' was not found.");
 
+            var actualReportId = reader.GetString(0);
             var template = reader.GetString(1);
             if (string.IsNullOrWhiteSpace(template))
-                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.TemplateNotFound, $"Legacy report definition '{request.ReportId}' has no FRX content.");
+                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.TemplateNotFound, $"Legacy report definition '{actualReportId}' has no FRX content.");
             var sql = reader.IsDBNull(2) ? null : reader.GetString(2);
             if (string.IsNullOrWhiteSpace(sql))
-                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.QueryDefinitionNotFound, $"Legacy report definition '{request.ReportId}' has no SQL definition.");
+                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.QueryDefinitionNotFound, $"Legacy report definition '{actualReportId}' has no SQL definition.");
 
-            var version = reader.IsDBNull(3)
-                ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(template + "\n" + sql)))
+            var storedVersion = reader.IsDBNull(3)
+                ? null
                 : Convert.ToString(reader.GetValue(3), System.Globalization.CultureInfo.InvariantCulture)!;
             var updatedAt = reader.IsDBNull(4) ? _clock.GetUtcNow() : new DateTimeOffset(DateTime.SpecifyKind(Convert.ToDateTime(reader.GetValue(4), System.Globalization.CultureInfo.InvariantCulture), DateTimeKind.Utc));
+            await reader.DisposeAsync().ConfigureAwait(false);
+
+            var supplementalQueries = await LoadSupplementalQueriesAsync(connection, actualReportId, cancellationToken).ConfigureAwait(false);
+            var versionMaterial = string.Join("\n", supplementalQueries.Select(query => query.SqlText).Prepend(sql).Prepend(template));
+            var version = storedVersion ?? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(versionMaterial)));
             var metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["schemaMapping"] = _schema.DefinitionTable,
@@ -152,14 +170,15 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
             if (!string.IsNullOrWhiteSpace(_schema.FirstResultSetTableName))
                 metadata["resultSet:0:tableName"] = _schema.FirstResultSetTableName;
             return new ReportDefinition(
-                resolution.DefinitionId,
+                actualReportId,
                 version,
-                $"{_schema.TemplateKeyPrefix}:{resolution.DefinitionId}",
+                $"{_schema.TemplateKeyPrefix}:{actualReportId}",
                 sql,
                 metadata,
                 updatedAt,
                 "legacy-sql-server",
-                template);
+                template,
+                supplementalQueries);
         }
         catch (LegacyReportDatabaseException)
         {
@@ -179,7 +198,48 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
     {
         var version = VersionExpression() ?? "NULL";
         var updated = string.IsNullOrWhiteSpace(_schema.UpdatedAtColumn) ? "NULL" : _schema.UpdatedAtColumn;
-        return $"SELECT {_schema.ReportIdColumn}, {_schema.TemplateColumn}, {_schema.SqlColumn}, {version}, {updated} FROM {_schema.DefinitionTable} WHERE {_schema.ReportIdColumn} = @reportId";
+        var nameCondition = string.IsNullOrWhiteSpace(_schema.ReportNameColumn)
+            ? string.Empty
+            : $" OR {_schema.ReportNameColumn} = @reportId";
+        return $"SELECT TOP 1 {_schema.ReportIdColumn}, {_schema.TemplateColumn}, {_schema.SqlColumn}, {version}, {updated} FROM {_schema.DefinitionTable} WHERE {_schema.ReportIdColumn} = @reportId{nameCondition} ORDER BY CASE WHEN {_schema.ReportIdColumn} = @reportId THEN 0 ELSE 1 END";
+    }
+
+    private async Task<IReadOnlyList<ReportDataQuery>> LoadSupplementalQueriesAsync(
+        SqlConnection connection,
+        string reportId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_schema.SupplementalQueryOrderColumn))
+            return Array.Empty<ReportDataQuery>();
+
+        await using var command = connection.CreateCommand();
+        command.CommandTimeout = TimeoutSeconds();
+        command.CommandText = $"""
+            SELECT {_schema.ReportIdColumn}, {_schema.SqlColumn}
+            FROM {_schema.DefinitionTable}
+            WHERE {_schema.ReportIdColumn} LIKE @reportPrefix ESCAPE '\'
+              AND {_schema.SqlColumn} IS NOT NULL
+            ORDER BY {_schema.SupplementalQueryOrderColumn}, {_schema.ReportIdColumn}
+            """;
+        var escapedPrefix = reportId
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("%", "\\%", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal) + "\\_%";
+        command.Parameters.Add(new SqlParameter("@reportPrefix", SqlDbType.NVarChar, 260) { Value = escapedPrefix });
+
+        var queries = new List<ReportDataQuery>();
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.Default, cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var subId = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+            if (reader.IsDBNull(1))
+                continue;
+            var supplementalSql = reader.GetString(1);
+            if (string.IsNullOrWhiteSpace(supplementalSql))
+                continue;
+            queries.Add(new ReportDataQuery(subId, supplementalSql) { SubReportId = subId });
+        }
+        return queries;
     }
 
     private string? VersionExpression() => !string.IsNullOrWhiteSpace(_schema.VersionColumn)
@@ -202,22 +262,55 @@ public sealed class LegacyDatabaseTemplateProvider : ITemplateProvider
     public Task<ReportTemplate> GetRequiredAsync(ReportDefinition definition, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (string.IsNullOrEmpty(definition.TemplateContent))
+        if (string.IsNullOrWhiteSpace(definition.TemplateContent))
             throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.TemplateNotFound, $"Report '{definition.ReportId}' did not include database FRX content.");
 
-        var content = definition.TemplateContent;
-        if (definition.ParameterMetadata.TryGetValue("templateContentEncoding", out var encoding) && string.Equals(encoding, "Base64Utf8", StringComparison.OrdinalIgnoreCase))
-        {
-            try
-            {
-                content = Encoding.UTF8.GetString(Convert.FromBase64String(content));
-            }
-            catch (FormatException exception)
-            {
-                throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.TemplateNotFound, $"Report '{definition.ReportId}' declares Base64Utf8 template storage but its FRX field is not valid Base64.", exception);
-            }
-        }
+        var content = DecodeTemplateContent(definition.TemplateContent, definition.ReportId);
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
         return Task.FromResult(new ReportTemplate(definition.TemplateKey, definition.Version, content, hash));
+    }
+
+    public static string DecodeTemplateContent(string rawContent, string reportId)
+    {
+        if (string.IsNullOrWhiteSpace(rawContent))
+            return string.Empty;
+
+        var trimmed = rawContent.Trim().TrimStart('\uFEFF', '\u0000', '\u200B');
+
+        // 1. If it already starts with XML declaration or <Report, it's raw XML
+        if (trimmed.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.StartsWith("<Report", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmed;
+        }
+
+        // 2. Try Base64 decoding
+        try
+        {
+            var cleanBase64 = trimmed.Replace("\r", "").Replace("\n", "").Replace(" ", "");
+            var bytes = Convert.FromBase64String(cleanBase64);
+            var decoded = Encoding.UTF8.GetString(bytes).Trim().TrimStart('\uFEFF', '\u0000', '\u200B');
+            if (decoded.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) ||
+                decoded.StartsWith("<Report", StringComparison.OrdinalIgnoreCase) ||
+                decoded.Contains("<Report", StringComparison.OrdinalIgnoreCase))
+            {
+                return decoded;
+            }
+        }
+        catch (FormatException)
+        {
+            // Not Base64, fall through
+        }
+
+        // 3. If rawContent contains <Report anywhere inside, extract from <Report
+        var reportIdx = trimmed.IndexOf("<Report", StringComparison.OrdinalIgnoreCase);
+        if (reportIdx >= 0)
+            return trimmed.Substring(reportIdx);
+
+        var xmlIdx = trimmed.IndexOf("<?xml", StringComparison.OrdinalIgnoreCase);
+        if (xmlIdx >= 0)
+            return trimmed.Substring(xmlIdx);
+
+        return trimmed;
     }
 }

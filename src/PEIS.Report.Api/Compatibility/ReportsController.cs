@@ -14,22 +14,46 @@ namespace PEIS.Report.Api.Compatibility;
 public sealed class ReportsController(
     IReportRenderer renderer,
     IFrxDocxReportExporter docxExporter,
-    LegacyReportRequestAdapter adapter) : ControllerBase
+    LegacyReportRequestAdapter adapter,
+    ILogger<ReportsController>? logger = null) : ControllerBase
 {
     [HttpGet]
     public IActionResult Test() => Ok("OK");
 
     [HttpPost]
+    [HttpPost("/BaseInfo/Report/GetReportByJson")]
     public async Task<IActionResult> GetReportByJson(
         [FromBody] JsonElement data,
         CancellationToken cancellationToken)
     {
-        var request = adapter.Adapt(data);
-        var result = await renderer.RenderPdfAsync(request, cancellationToken);
+        try
+        {
+            var request = adapter.Adapt(data);
+            var result = await renderer.RenderPdfAsync(request, cancellationToken);
 
-        // Keep the compatibility surface as a direct PDF response/stream. Do not wrap the
-        // response in the new API's JSON envelope.
-        return File(result.Pdf, "application/pdf", result.FileName, enableRangeProcessing: false);
+            if (result.UnavailableImageCount > 0)
+                Response.Headers.Append("X-ReportPlatform-Unavailable-Images", result.UnavailableImageCount.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            // Keep the compatibility surface as a direct PDF response/stream. Do not wrap the
+            // response in the new API's JSON envelope.
+            return File(result.Pdf, "application/pdf", result.FileName, enableRangeProcessing: false);
+        }
+        catch (LegacyReportDatabaseException ex)
+        {
+            logger?.LogError(ex, "Legacy report generation failed: [{Code}] {Message}", ex.Code, ex.Message);
+            return StatusCode(ex.Code switch
+            {
+                LegacyReportDatabaseErrorCode.ReportNotFound => StatusCodes.Status404NotFound,
+                LegacyReportDatabaseErrorCode.TemplateNotFound => StatusCodes.Status404NotFound,
+                LegacyReportDatabaseErrorCode.ParameterBindFailed => StatusCodes.Status400BadRequest,
+                _ => StatusCodes.Status500InternalServerError
+            }, new { error = ex.Message, code = ex.Code.ToString() });
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "Unexpected error generating report: {Message}", ex.Message);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
+        }
     }
 
     /// <summary>

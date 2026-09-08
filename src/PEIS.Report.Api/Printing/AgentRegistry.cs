@@ -24,7 +24,7 @@ public sealed class AgentRegistry(IOptions<AgentRegistryOptions> options)
     /// Registers a single active agent for a business station. A reconnect using the same persisted AgentId replaces
     /// its former SignalR connection. A different active installation may not claim the same StationId.
     /// </summary>
-    public AgentRegistrationResult TryRegister(string connectionId, AgentRegistration registration)
+    public AgentRegistrationResult TryRegister(string connectionId, AgentRegistration registration, string? remoteAddress = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
         ArgumentNullException.ThrowIfNull(registration);
@@ -49,8 +49,30 @@ public sealed class AgentRegistry(IOptions<AgentRegistryOptions> options)
             new Dictionary<string, string>(registration.PrinterBindings, StringComparer.OrdinalIgnoreCase),
             registration.Version,
             connectionId,
+            NormalizeAddress(remoteAddress),
             DateTimeOffset.UtcNow);
         return AgentRegistrationResult.Accepted(agentId, registration.StationId.Trim());
+    }
+
+    /// <summary>
+    /// Resolves the agent running on the same workstation as a browser request. Java forwards the browser address
+    /// when it submits a delivery, so normal front-end calls do not need to know an AgentId or StationId.
+    /// </summary>
+    public AgentState? FindByClientAddress(string? clientAddress)
+    {
+        var normalized = NormalizeAddress(clientAddress);
+        if (string.IsNullOrWhiteSpace(normalized)) return null;
+        var matches = Snapshot().Where(x => string.Equals(x.RemoteAddress, normalized, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    internal static string? NormalizeAddress(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return null;
+        var first = address.Split(',', 2, StringSplitOptions.TrimEntries)[0];
+        if (!System.Net.IPAddress.TryParse(first, out var parsed)) return first.Trim();
+        if (parsed.IsIPv4MappedToIPv6) parsed = parsed.MapToIPv4();
+        return parsed.ToString();
     }
 
     public bool Touch(string agentId, string connectionId)
@@ -94,6 +116,7 @@ public sealed class AgentRegistry(IOptions<AgentRegistryOptions> options)
         IReadOnlyDictionary<string, string> PrinterBindings,
         string Version,
         string ConnectionId,
+        string? RemoteAddress,
         DateTimeOffset LastSeenAt);
 }
 

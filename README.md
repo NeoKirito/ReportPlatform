@@ -2,6 +2,17 @@
 
 C#/.NET 10 report/PDF and B/S silent-printing platform for PEIS.
 
+## Windows portable API package
+
+Run `scripts/New-PortableReportPackage.ps1` to publish a self-contained Windows x64 ZIP under `artifacts/`.
+Extract the entire ZIP, fill `ConnectionString` in `config.ini` (default `Port=82`), and double-click
+`启动服务.cmd` / `关闭服务.cmd`. No SDK, IIS, print agent, or additional business configuration is required
+for the supported legacy database schema. The package uses the real SQL Server/FastReport engine.
+It also exposes `POST /BaseInfo/Report/GetReportByJson`, accepting the original JSON and returning a PDF.
+The IP address is the deployment machine's address; an existing listener on port 82 is never stopped automatically.
+See the included `使用说明.txt` for limitations and `scripts/Test-PortableReportPackage.ps1 -ZipPath <ZIP>` for
+isolated launcher checks (no real database access). The launcher runs a background process, not a Windows Service.
+
 ## Compatibility first
 
 The new engine is allowed to change internally, but existing PEIS report callers should not have to migrate.

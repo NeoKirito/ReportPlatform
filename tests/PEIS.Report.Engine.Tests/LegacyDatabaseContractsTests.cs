@@ -53,6 +53,32 @@ public sealed class LegacyDatabaseContractsTests
     }
 
     [Fact]
+    public async Task Versioned_definition_is_reused_from_disk_after_process_cache_restart()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "peis-definition-cache-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var key = ReportDefinitionCache.BuildCacheKey("GUIDE_A4", new ReportDefinitionVersion("1", true, null, "version"));
+            var loads = 0;
+            var firstCache = new ReportDefinitionCache(directory);
+            await firstCache.GetOrCreateAsync(key, _ => Task.FromResult(CreateDefinition("1", ref loads)), CancellationToken.None);
+
+            var restartedCache = new ReportDefinitionCache(directory);
+            var restored = await restartedCache.GetOrCreateAsync(
+                key,
+                _ => Task.FromException<ReportDefinition>(new InvalidOperationException("database should not be called")),
+                CancellationToken.None);
+
+            Assert.Equal("1", restored.Version);
+            Assert.Equal(1, loads);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
     public void Binder_prefers_complete_legacy_payload_without_string_substitution()
     {
         using var payloadDocument = JsonDocument.Parse("{\"tjh\":\"LEGACY-001\",\"ignored\":\"x\"}");
@@ -96,6 +122,49 @@ public sealed class LegacyDatabaseContractsTests
                 Assert.Equal(System.Data.DbType.AnsiString, parameter.DbType);
                 Assert.Equal("ITEM-001", parameter.Value);
             });
+    }
+
+    [Fact]
+    public void Binder_translates_quoted_dollar_brace_placeholders_and_flattens_nested_legacy_payload()
+    {
+        using var payloadDocument = JsonDocument.Parse("{\"djh\":{\"grtjgcjjgid\":\"GROUP-001\",\"sfxmddid\":\"ITEM-001\"},\"bbid\":\"xmtm\"}");
+        var request = new ReportRenderRequest("xmtm", new Dictionary<string, JsonElement>(), LegacyPayload: payloadDocument.RootElement.Clone());
+        var ignored = 0;
+        var definition = CreateDefinition("1", ref ignored) with { SqlText = "exec tjxt_fastreportgetTxmxx '${grtjgcjjgid}','${sfxmddid}'" };
+
+        var binding = new AdoNetLegacyQueryParameterBinder().Bind(definition, request);
+
+        Assert.Equal("exec tjxt_fastreportgetTxmxx @grtjgcjjgid,@sfxmddid", binding.CommandText);
+        Assert.Collection(binding.Parameters,
+            parameter =>
+            {
+                Assert.Equal("grtjgcjjgid", parameter.Name);
+                Assert.Equal(System.Data.DbType.AnsiString, parameter.DbType);
+                Assert.Equal("GROUP-001", parameter.Value);
+            },
+            parameter =>
+            {
+                Assert.Equal("sfxmddid", parameter.Name);
+                Assert.Equal(System.Data.DbType.AnsiString, parameter.DbType);
+                Assert.Equal("ITEM-001", parameter.Value);
+            });
+    }
+
+    [Fact]
+    public void Binder_leaves_unresolved_quoted_dollar_brace_tokens_unchanged()
+    {
+        using var payloadDocument = JsonDocument.Parse("{\"grtjgcjjgid\":\"GROUP-001\"}");
+        var request = new ReportRenderRequest("xmtm", new Dictionary<string, JsonElement>(), LegacyPayload: payloadDocument.RootElement.Clone());
+        var ignored = 0;
+        var definition = CreateDefinition("1", ref ignored) with { SqlText = "exec report '${grtjgcjjgid}','${missing}'" };
+
+        var binding = new AdoNetLegacyQueryParameterBinder().Bind(definition, request);
+
+        Assert.Equal("exec report @grtjgcjjgid,'${missing}'", binding.CommandText);
+        var parameter = Assert.Single(binding.Parameters);
+        Assert.Equal("grtjgcjjgid", parameter.Name);
+        Assert.Equal(System.Data.DbType.AnsiString, parameter.DbType);
+        Assert.Equal("GROUP-001", parameter.Value);
     }
 
     [Fact]

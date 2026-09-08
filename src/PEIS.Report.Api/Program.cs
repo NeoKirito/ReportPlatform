@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using PEIS.Report.Api;
 using PEIS.Report.Api.Compatibility;
 using PEIS.Report.Infrastructure.SqlServer;
 using PEIS.Report.Api.Hubs;
@@ -16,6 +17,7 @@ builder.Services.AddControllers();
 
 builder.Services.Configure<PrintRoutingOptions>(builder.Configuration.GetSection("PrintRouting"));
 builder.Services.Configure<PrintAgentSecurityOptions>(builder.Configuration.GetSection("PrintAgentSecurity"));
+builder.Services.Configure<ReportDeliverySecurityOptions>(builder.Configuration.GetSection("ReportDeliverySecurity"));
 builder.Services.Configure<AgentRegistryOptions>(builder.Configuration.GetSection("PrintAgentRegistry"));
 builder.Services.Configure<RenderConcurrencyOptions>(builder.Configuration.GetSection("Rendering"));
 builder.Services.Configure<ImageResolutionOptions>(builder.Configuration.GetSection("ImageResolution"));
@@ -30,10 +32,13 @@ builder.Services.AddSignalR(options =>
 });
 builder.Services.AddSingleton<AgentRegistry>();
 builder.Services.AddSingleton<PrintJobStateStore>();
+builder.Services.AddSingleton<ReportDeliveryStateStore>();
+builder.Services.AddSingleton<ReportDeliveryArtifactTokenStore>();
 builder.Services.AddSingleton<PrintRequestIdempotencyStore>();
 builder.Services.AddSingleton<PrintScenarioCatalog>();
 builder.Services.AddSingleton<IPdfArtifactStore, LocalPdfArtifactStore>();
-builder.Services.AddSingleton<ReportDefinitionCache>();
+builder.Services.AddSingleton(new ReportDefinitionCache(
+    builder.Configuration.GetValue<string>("ReportEngine:DefinitionCacheDirectory")));
 var definitionSource = builder.Configuration.GetValue<string>("ReportEngine:DefinitionSource") ?? "Deterministic";
 if (string.Equals(definitionSource, "LegacySqlServer", StringComparison.OrdinalIgnoreCase))
 {
@@ -60,6 +65,7 @@ builder.Services.AddSingleton<IImageResolver>(sp => new ImageResolver(
 var renderer = builder.Configuration.GetValue<string>("ReportEngine:Renderer") ?? "Stub";
 if (string.Equals(renderer, "FastReportOpenSource", StringComparison.OrdinalIgnoreCase))
 {
+    OpenSourceFastReportRuntime.WarmupCompiler();
     builder.Services.AddSingleton<IWatermarkTextProvider, SqlServerWatermarkTextProvider>();
     builder.Services.AddSingleton<IFastReportRuntime, OpenSourceFastReportRuntime>();
     builder.Services.AddSingleton<IReportRenderer, FastReportReportRenderer>();
@@ -75,6 +81,8 @@ builder.Services.AddSingleton<IFrxDocxReportExporter, FrxDocxReportExporter>();
 builder.Services.AddSingleton<PrintJobCoordinator>();
 
 builder.Services.AddSingleton<BusinessPrintCoordinator>();
+builder.Services.AddSingleton<ReportDeliveryCoordinator>();
+builder.Services.AddHostedService<ReportDefinitionWarmupService>();
 
 var app = builder.Build();
 app.UseDefaultFiles();

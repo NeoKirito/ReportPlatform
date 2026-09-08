@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PEIS.PrintAgent.Printing;
+using PEIS.PrintAgent.Previewing;
 using PEIS.Report.Contracts;
 
 namespace PEIS.PrintAgent.Services;
@@ -13,13 +14,16 @@ public sealed class AgentWorker(
     PrinterCatalog printers,
     PrintArtifactDownloader artifacts,
     PrinterQueueManager queues,
+    DeliveryPrinterResolver deliveryPrinters,
+    IPdfPreviewer previewer,
     ILogger<AgentWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var cfg = options.Value;
         cfg.AgentId = identityStore.GetOrCreate(cfg.AgentId);
-        if (string.IsNullOrWhiteSpace(cfg.StationId)) cfg.StationId = Environment.MachineName;
+        if (string.IsNullOrWhiteSpace(cfg.StationId) || string.Equals(cfg.StationId, "AUTO", StringComparison.OrdinalIgnoreCase))
+            cfg.StationId = Environment.MachineName;
         Directory.CreateDirectory(cfg.WorkDirectory);
         CleanupOldArtifacts(cfg.WorkDirectory);
 
@@ -48,6 +52,7 @@ public sealed class AgentWorker(
             .Build();
 
         connection.On<PrintBatchDispatch>("PrintBatch", batch => HandleBatchAsync(connection, cfg, batch, token));
+        connection.On<ReportDeliveryDispatch>("ReportDelivery", delivery => HandleDeliveryAsync(connection, cfg, delivery, token));
         connection.Reconnected += _ => RegisterAsync(connection, cfg, CancellationToken.None);
 
         await connection.StartAsync(token);
@@ -154,6 +159,116 @@ public sealed class AgentWorker(
             status,
             message,
             status is PrintTargetStatus.Completed or PrintTargetStatus.Failed ? DateTimeOffset.UtcNow : null), token);
+
+    private async Task HandleDeliveryAsync(
+        HubConnection connection,
+        AgentOptions cfg,
+        ReportDeliveryDispatch delivery,
+        CancellationToken token)
+    {
+        try
+        {
+            if (delivery.ExpiresAt <= DateTimeOffset.UtcNow)
+            {
+                await SendDeliveryStatusAsync(connection, cfg.AgentId, delivery.JobId, ReportDeliveryStatus.Expired,
+                    "The desktop delivery expired before it was received.", CancellationToken.None);
+                return;
+            }
+
+            await SendDeliveryStatusAsync(connection, cfg.AgentId, delivery.JobId, ReportDeliveryStatus.Downloading, null, token);
+            var path = await artifacts.DownloadDeliveryAsync(cfg.ServerUrl, cfg.WorkDirectory, delivery, token);
+
+            var canPrint = delivery.Action is ReportDeliveryAction.Print or ReportDeliveryAction.PreviewAndPrint;
+            var installed = printers.GetInstalledPrinters();
+            var rememberedPrinter = canPrint
+                ? deliveryPrinters.Resolve(
+                    delivery.Djid,
+                    delivery.PrinterName,
+                    installed,
+                    cfg.Printing.DefaultPrinter,
+                    cfg.Printing.Silent)
+                : null;
+
+            async Task PrintAsync(string selectedPrinter)
+            {
+                deliveryPrinters.Remember(delivery.Djid, selectedPrinter, installed);
+                await QueueDeliveryPrintAsync(connection, cfg.AgentId, delivery, path, selectedPrinter);
+            }
+
+            if (canPrint && cfg.Printing.Silent)
+            {
+                if (string.IsNullOrWhiteSpace(rememberedPrinter))
+                    throw new InvalidOperationException(
+                        "Silent printing needs a remembered Djid printer, Agent:Printing:DefaultPrinter, or Windows default printer.");
+                await PrintAsync(rememberedPrinter);
+                return;
+            }
+
+            var suggestedPrinter = rememberedPrinter ??
+                DeliveryPrinterResolver.SuggestedDefault(installed, cfg.Printing.DefaultPrinter);
+            await previewer.OpenAsync(new PdfPreviewRequest(
+                path,
+                delivery.FileName,
+                canPrint ? PrintAsync : null,
+                canPrint ? installed.Select(x => x.Name).ToArray() : null,
+                suggestedPrinter), token);
+            await SendDeliveryStatusAsync(connection, cfg.AgentId, delivery.JobId, ReportDeliveryStatus.Opened, null, token);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Desktop report delivery {JobId} failed", delivery.JobId);
+            await SendDeliveryStatusAsync(connection, cfg.AgentId, delivery.JobId, ReportDeliveryStatus.Failed,
+                ex.Message, CancellationToken.None);
+        }
+    }
+
+    private ValueTask QueueDeliveryPrintAsync(
+        HubConnection connection,
+        string agentId,
+        ReportDeliveryDispatch delivery,
+        string path,
+        string printerName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(printerName);
+
+        var document = new PrintDocumentDispatch(
+            delivery.JobId,
+            delivery.ArtifactId,
+            delivery.DownloadPath,
+            string.IsNullOrWhiteSpace(delivery.Djid) ? "desktop-report" : delivery.Djid,
+            "uploaded-pdf",
+            delivery.PrinterRole ?? delivery.Djid ?? string.Empty,
+            printerName,
+            Math.Max(1, delivery.Copies),
+            delivery.Duplex);
+        return queues.EnqueueAsync(new PrintWorkItem(
+            delivery.JobId,
+            document,
+            path,
+            (status, message) => SendDeliveryStatusAsync(
+                connection,
+                agentId,
+                delivery.JobId,
+                status switch
+                {
+                    PrintTargetStatus.Printing => ReportDeliveryStatus.Printing,
+                    PrintTargetStatus.Completed => ReportDeliveryStatus.Completed,
+                    PrintTargetStatus.Failed => ReportDeliveryStatus.Failed,
+                    _ => ReportDeliveryStatus.Queued
+                },
+                message,
+                CancellationToken.None)), CancellationToken.None);
+    }
+
+    private static Task SendDeliveryStatusAsync(
+        HubConnection connection,
+        string agentId,
+        Guid jobId,
+        ReportDeliveryStatus status,
+        string? message,
+        CancellationToken token)
+        => connection.InvokeAsync("ReportDeliveryResult", new ReportDeliveryResult(
+            jobId, agentId, status, message, DateTimeOffset.UtcNow), token);
 
     private static void CleanupOldArtifacts(string workDirectory)
     {

@@ -71,4 +71,21 @@ public sealed class LegacyRealContractTests
         Assert.StartsWith("<?xml", template.Content, StringComparison.Ordinal);
         Assert.Equal("Master", definition.ParameterMetadata["resultSet:0:tableName"]);
     }
+
+    [Fact]
+    public async Task Dump_All_54_Report_Definitions()
+    {
+        const string connStr = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;";
+        await using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT xh, djid, djmc, djlx, CASE WHEN dj_frx IS NOT NULL AND LEN(dj_frx)>0 THEN 1 ELSE 0 END AS has_frx, CASE WHEN djsql IS NOT NULL AND DATALENGTH(djsql)>0 THEN 1 ELSE 0 END AS has_sql FROM dbo.xt_bgdy_djwh_zzj ORDER BY xh";
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var sb = new StringBuilder();
+        while (await reader.ReadAsync())
+        {
+            sb.AppendLine($"xh:{reader[0]}, djid:{reader[1]}, djmc:{reader[2]}, djlx:{reader[3]}, frx:{reader[4]}, sql:{reader[5]}");
+        }
+        Assert.True(sb.Length > 0);
+    }
 }

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace PEIS.Report.Contracts;
 
@@ -114,3 +115,57 @@ public sealed record PrintTargetResult(
     PrintTargetStatus Status,
     string? Message = null,
     DateTimeOffset? CompletedAt = null);
+
+/// <summary>
+/// Additive desktop delivery channel for a PDF already generated and finalized by the PEIS backend.
+/// It deliberately does not carry report parameters or database credentials.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ReportDeliveryAction
+{
+    Preview,
+    Print,
+    PreviewAndPrint
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ReportDeliveryStatus
+{
+    Queued,
+    Downloading,
+    Opened,
+    Printing,
+    Completed,
+    Failed,
+    Expired
+}
+
+public sealed record ReportDeliveryDispatch(
+    Guid JobId,
+    Guid ArtifactId,
+    string DownloadPath,
+    string FileName,
+    string Sha256,
+    long Length,
+    DateTimeOffset ExpiresAt,
+    ReportDeliveryAction Action,
+    string? PrinterRole = null,
+    string? PrinterName = null,
+    int Copies = 1,
+    bool Duplex = false,
+    string? Djid = null);
+
+public sealed record ReportDeliveryResult(
+    Guid JobId,
+    string AgentId,
+    ReportDeliveryStatus Status,
+    string? Message = null,
+    DateTimeOffset? UpdatedAt = null);
+
+public sealed record CreateReportDeliveryResponse(
+    Guid JobId,
+    Guid ArtifactId,
+    string StationId,
+    ReportDeliveryAction Action,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset ExpiresAt);

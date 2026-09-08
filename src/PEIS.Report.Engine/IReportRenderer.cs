@@ -13,4 +13,7 @@ public sealed record ReportRenderResult(
     byte[] Pdf,
     string FileName,
     int PageCount,
-    IReadOnlyList<ReportStageTiming> Timings);
+    IReadOnlyList<ReportStageTiming> Timings)
+{
+    public int UnavailableImageCount { get; init; }
+}

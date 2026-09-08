@@ -60,6 +60,18 @@ public sealed class AgentRegistryTests
         Assert.Equal(AgentRegistrationStatus.Invalid, noStation.Status);
     }
 
+    [Fact]
+    public void Browser_address_resolves_the_agent_on_the_same_workstation()
+    {
+        var registry = CreateRegistry();
+        registry.TryRegister("connection-a", Registration("agent-a", "PC-A", "PC-A"), "::ffff:192.168.0.21");
+        registry.TryRegister("connection-b", Registration("agent-b", "PC-B", "PC-B"), "192.168.0.22");
+
+        Assert.Equal("agent-a", registry.FindByClientAddress("192.168.0.21")?.AgentId);
+        Assert.Equal("agent-b", registry.FindByClientAddress("192.168.0.22, 10.0.0.1")?.AgentId);
+        Assert.Null(registry.FindByClientAddress("192.168.0.23"));
+    }
+
     private static AgentRegistry CreateRegistry()
         => new(Options.Create(new AgentRegistryOptions { OfflineAfterSeconds = 90 }));
 

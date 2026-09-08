@@ -17,7 +17,14 @@ public sealed record ReportDefinition(
     IReadOnlyDictionary<string, string> ParameterMetadata,
     DateTimeOffset UpdatedAt,
     string Source,
-    string? TemplateContent = null);
+    string? TemplateContent = null,
+    IReadOnlyList<ReportDataQuery>? SupplementalQueries = null);
+
+/// <summary>A database-owned supplemental query and the exact DataTable name expected by the FRX.</summary>
+public sealed record ReportDataQuery(string TableName, string SqlText)
+{
+    public string? SubReportId { get; init; }
+}
 
 public sealed record ReportTemplate(string TemplateKey, string Version, string Content, string ContentHash);
 
@@ -49,8 +56,15 @@ public interface IReportDataProvider
 public sealed class ReportDefinitionCache
 {
     private readonly ConcurrentDictionary<string, Lazy<Task<ReportDefinition>>> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly string? _persistenceDirectory;
     private long _hits;
     private long _misses;
+
+    public ReportDefinitionCache(string? persistenceDirectory = null)
+    {
+        if (!string.IsNullOrWhiteSpace(persistenceDirectory))
+            _persistenceDirectory = Path.GetFullPath(persistenceDirectory);
+    }
 
     public async Task<ReportDefinition> GetOrCreateAsync(
         string reportId,
@@ -59,10 +73,28 @@ public sealed class ReportDefinitionCache
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reportId);
         // Metadata creation is shared. It must not inherit cancellation from whichever request first populates the cache.
-        var created = new Lazy<Task<ReportDefinition>>(() => factory(CancellationToken.None), LazyThreadSafetyMode.ExecutionAndPublication);
+        var created = new Lazy<Task<ReportDefinition>>(
+            () => LoadOrCreateAsync(reportId, factory),
+            LazyThreadSafetyMode.ExecutionAndPublication);
         var entry = _entries.GetOrAdd(reportId, created);
         if (ReferenceEquals(entry, created))
+        {
             Interlocked.Increment(ref _misses);
+            // If this is a versioned key (e.g. REPORTID|ttl:...), evict old versions of the same report to prevent memory leaks
+            var separatorIndex = reportId.IndexOf('|');
+            if (separatorIndex > 0)
+            {
+                var reportPrefix = reportId[..(separatorIndex + 1)];
+                foreach (var key in _entries.Keys)
+                {
+                    if (key.StartsWith(reportPrefix, StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(key, reportId, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _entries.TryRemove(key, out _);
+                    }
+                }
+            }
+        }
         else
             Interlocked.Increment(ref _hits);
 
@@ -78,7 +110,16 @@ public sealed class ReportDefinitionCache
         }
     }
 
-    public bool Invalidate(string cacheKey) => _entries.TryRemove(cacheKey, out _);
+    public bool Invalidate(string cacheKey)
+    {
+        var removed = _entries.TryRemove(cacheKey, out _);
+        var path = CachePath(cacheKey);
+        if (path is not null && File.Exists(path))
+        {
+            try { File.Delete(path); removed = true; } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        return removed;
+    }
 
     /// <summary>Removes every versioned entry for one logical report without touching other report definitions.</summary>
     public int InvalidateReport(string reportId)
@@ -91,6 +132,15 @@ public sealed class ReportDefinitionCache
             if (_entries.TryRemove(key, out _))
                 removed++;
         }
+        if (_persistenceDirectory is not null && Directory.Exists(_persistenceDirectory))
+        {
+            foreach (var path in Directory.EnumerateFiles(_persistenceDirectory, "*.json", SearchOption.TopDirectoryOnly))
+            {
+                var envelope = TryReadEnvelope(path);
+                if (envelope is null || !envelope.CacheKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
+                try { File.Delete(path); removed++; } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            }
+        }
         return removed;
     }
 
@@ -102,6 +152,64 @@ public sealed class ReportDefinitionCache
     }
 
     private static string NormalizeReportId(string reportId) => reportId.Trim().ToUpperInvariant();
+
+    private async Task<ReportDefinition> LoadOrCreateAsync(
+        string cacheKey,
+        Func<CancellationToken, Task<ReportDefinition>> factory)
+    {
+        var path = CachePath(cacheKey);
+        if (path is not null)
+        {
+            var cached = TryReadEnvelope(path);
+            if (cached is not null && string.Equals(cached.CacheKey, cacheKey, StringComparison.OrdinalIgnoreCase))
+                return cached.Definition;
+        }
+
+        var definition = await factory(CancellationToken.None).ConfigureAwait(false);
+        if (path is not null) TryWriteEnvelope(path, new DefinitionCacheEnvelope(cacheKey, definition));
+        return definition;
+    }
+
+    private string? CachePath(string cacheKey)
+    {
+        if (_persistenceDirectory is null) return null;
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(cacheKey)));
+        return Path.Combine(_persistenceDirectory, hash + ".json");
+    }
+
+    private static DefinitionCacheEnvelope? TryReadEnvelope(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            return JsonSerializer.Deserialize<DefinitionCacheEnvelope>(File.ReadAllText(path));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
+        {
+            return null;
+        }
+    }
+
+    private static void TryWriteEnvelope(string path, DefinitionCacheEnvelope envelope)
+    {
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(temporary, JsonSerializer.Serialize(envelope));
+            File.Move(temporary, path, true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
+        {
+            // A cache write must never fail report rendering.
+        }
+        finally
+        {
+            try { if (File.Exists(temporary)) File.Delete(temporary); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private sealed record DefinitionCacheEnvelope(string CacheKey, ReportDefinition Definition);
 
     public ReportDefinitionCacheSnapshot Snapshot() => new(
         Interlocked.Read(ref _hits),

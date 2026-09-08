@@ -15,13 +15,14 @@ public sealed class LegacyCompatibilityTests
     [Fact]
     public void Adapter_preserves_arbitrary_payload_and_case_insensitive_report_identifier()
     {
-        const string body = "{\"BBID\":\"R-100\",\"nested\":{\"keep\":true},\"unknownField\":[1,2,3]}";
+        const string body = "{\"BBID\":\"R-100\",\"nested\":{\"keep\":true},\"unknownField\":[1,2,3],\"fileName\":\"123456\"}";
         using var json = JsonDocument.Parse(body);
 
         var request = new LegacyReportRequestAdapter().Adapt(json.RootElement);
 
         Assert.Equal("R-100", request.ReportId);
         Assert.Equal("legacy", request.Profile);
+        Assert.Equal("123456", request.FileName);
         Assert.True(request.Parameters.ContainsKey("nested"));
         Assert.True(request.Parameters.ContainsKey("unknownField"));
         Assert.NotNull(request.LegacyPayload);
@@ -38,18 +39,25 @@ public sealed class LegacyCompatibilityTests
         Assert.NotNull(controllerRoute);
         Assert.Equal("api/[controller]/[action]", controllerRoute!.Template);
         Assert.NotNull(pdfMethod);
-        Assert.NotNull(pdfMethod!.GetCustomAttribute<HttpPostAttribute>());
+        var pdfRoutes = pdfMethod!.GetCustomAttributes<HttpPostAttribute>().ToArray();
+        Assert.Contains(pdfRoutes, route => route.Template is null);
+        Assert.Contains(pdfRoutes, route => route.Template == "/BaseInfo/Report/GetReportByJson");
         Assert.Equal("GetReportByJson", pdfMethod.Name);
         Assert.NotNull(docxMethod);
         Assert.NotNull(docxMethod!.GetCustomAttribute<HttpPostAttribute>());
         Assert.Equal("GetReportDocxByJson", docxMethod.Name);
     }
 
-    [Fact]
-    public async Task Controller_returns_direct_pdf_file_without_json_wrapper()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task Controller_returns_direct_pdf_file_without_json_wrapper(int unavailableImages)
     {
         using var json = JsonDocument.Parse("{\"bbid\":\"GUIDE_A4\"}");
-        var controller = new ReportsController(new FixedPdfRenderer(), new FixedDocxExporter(), new LegacyReportRequestAdapter());
+        var controller = new ReportsController(new FixedPdfRenderer(unavailableImages), new FixedDocxExporter(), new LegacyReportRequestAdapter())
+        {
+            ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
+        };
 
         var action = await controller.GetReportByJson(json.RootElement, CancellationToken.None);
 
@@ -57,6 +65,7 @@ public sealed class LegacyCompatibilityTests
         Assert.Equal("application/pdf", file.ContentType);
         Assert.Equal("legacy.pdf", file.FileDownloadName);
         Assert.Equal(new byte[] { 1, 2, 3 }, file.FileContents);
+        Assert.Equal(unavailableImages == 0 ? "" : "2", controller.Response.Headers["X-ReportPlatform-Unavailable-Images"].ToString());
     }
 
     [Fact]
@@ -77,10 +86,10 @@ public sealed class LegacyCompatibilityTests
         Assert.Equal("2", controller.Response.Headers["X-ReportPlatform-Docx-Unsupported-Objects"].ToString());
     }
 
-    private sealed class FixedPdfRenderer : IReportRenderer
+    private sealed class FixedPdfRenderer(int unavailableImages = 0) : IReportRenderer
     {
         public Task<ReportRenderResult> RenderPdfAsync(ReportRenderRequest request, CancellationToken cancellationToken)
-            => Task.FromResult(new ReportRenderResult([1, 2, 3], "legacy.pdf", 1, []));
+            => Task.FromResult(new ReportRenderResult([1, 2, 3], "legacy.pdf", 1, []) { UnavailableImageCount = unavailableImages });
     }
 
     private sealed class FixedDocxExporter : IFrxDocxReportExporter

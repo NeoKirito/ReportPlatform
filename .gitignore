@@ -7,3 +7,9 @@
 *.nupkg
 artifacts/
 .runtime/
+*.log
+publish/
+temp-api-publish/
+deploy/portable/
+.preflight-transfer/
+*.zip

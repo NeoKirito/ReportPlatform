@@ -20,7 +20,10 @@ public interface IFastReportPreparedDocument : IAsyncDisposable
 /// <summary>Prepared per-request document plus timings produced inside the renderer-specific integration boundary.</summary>
 public sealed record FastReportRuntimePreparation(
     IFastReportPreparedDocument Document,
-    IReadOnlyList<ReportStageTiming> Timings);
+    IReadOnlyList<ReportStageTiming> Timings)
+{
+    public ImageResolveBatch? Images { get; init; }
+}
 
 public sealed record FastReportRenderContext(
     ReportRenderRequest Request,
@@ -72,8 +75,6 @@ public sealed class FastReportReportRenderer(
         var reportData = await metrics.MeasureAsync("SqlQuery", () => data.QueryAsync(definition, request, cancellationToken));
         metrics.Rows = reportData.RowCount;
         metrics.SqlResultSets = reportData.Tables.Count;
-        await metrics.MeasureAsync("ImageDiscovery", () => Task.CompletedTask);
-        await metrics.MeasureAsync("ImageResolve", () => Task.CompletedTask);
 
         // The maintenance database is the authority for the institution name. Ignore caller-provided text so a legacy
         // request can only enable or disable the watermark; it cannot impersonate a different organization.
@@ -90,6 +91,13 @@ public sealed class FastReportReportRenderer(
             var profile = PdfExportProfile.Resolve(request.Profile);
             var context = new FastReportRenderContext(request, definition, template, reportData, profile);
             var preparation = await runtime.PrepareAsync(context, cancellationToken);
+            if (preparation.Images is { } images)
+            {
+                metrics.ImageCount = images.Images.Count + images.FailureCount;
+                metrics.ImageBytes = images.TotalBytes;
+                metrics.ImageCacheHits = images.CacheHits;
+                metrics.ImageFailures = images.FailureCount;
+            }
             foreach (var timing in preparation.Timings)
                 metrics.Record(timing.Stage, timing.ElapsedMilliseconds);
             await using var prepared = preparation.Document;
@@ -102,7 +110,10 @@ public sealed class FastReportReportRenderer(
         await metrics.MeasureAsync("ArtifactWrite", () => Task.CompletedTask);
         var observation = metrics.Complete();
         telemetry.Record(observation);
-        return new ReportRenderResult(output.Pdf, PdfExportProfile.FileName(request.FileName, request.ReportId), output.PageCount, observation.Timings);
+        return new ReportRenderResult(output.Pdf, PdfExportProfile.FileName(request.FileName, request.ReportId), output.PageCount, observation.Timings)
+        {
+            UnavailableImageCount = metrics.ImageFailures
+        };
     }
 }
 

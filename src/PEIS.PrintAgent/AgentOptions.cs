@@ -15,10 +15,10 @@ public sealed class AgentOptions
     public string? RegistrationToken { get; set; }
 
     /// <summary>
-    /// Stable PEIS workstation/station code, e.g. REG-01. PEIS sends this code with a print action.
-    /// Configure once per workstation; users do not choose printers for each print.
+    /// Optional installation label. Blank or AUTO uses the Windows machine name. Normal preview requests are routed
+    /// by the browser/Agent source address and therefore do not need to know this value.
     /// </summary>
-    public string StationId { get; set; } = Environment.MachineName;
+    public string StationId { get; set; } = string.Empty;
 
     /// <summary>
     /// Logical role -> Windows printer name.
@@ -37,6 +37,30 @@ public sealed class AgentOptions
     public string WorkDirectory { get; set; } = ".runtime/print-agent";
 
     public PrintBackendOptions PrintBackend { get; set; } = new();
+
+    public PreviewOptions Preview { get; set; } = new();
+
+    public DeliveryPrintingOptions Printing { get; set; } = new();
+}
+
+public sealed class DeliveryPrintingOptions
+{
+    /// <summary>
+    /// When true, printable desktop deliveries bypass the preview window and are sent directly to the remembered
+    /// Djid printer. The configured/default Windows printer is remembered on the first silent print.
+    /// </summary>
+    public bool Silent { get; set; }
+
+    /// <summary>Optional first-use fallback. Blank uses the Windows default printer.</summary>
+    public string? DefaultPrinter { get; set; }
+}
+
+public sealed class PreviewOptions
+{
+    /// <summary>Only the new ReportDelivery message uses this setting; legacy printing is unaffected.</summary>
+    public bool Enabled { get; set; } = true;
+    public int WindowWidth { get; set; } = 1100;
+    public int WindowHeight { get; set; } = 820;
 }
 
 public sealed class PrintBackendOptions

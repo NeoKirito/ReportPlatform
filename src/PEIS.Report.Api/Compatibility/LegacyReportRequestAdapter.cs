@@ -10,7 +10,11 @@ namespace PEIS.Report.Api.Compatibility;
 /// </summary>
 public sealed class LegacyReportRequestAdapter
 {
-    private static readonly string[] ReportIdCandidates = ["bbid", "djid", "cxid", "reportId"];
+    private static readonly string[] ReportIdCandidates =
+    [
+        "bbid", "djid", "cxid", "reportId", "report_id", "reportID",
+        "bgid", "bgurl", "templateid", "templateId", "id", "xh", "bgmc", "djmc"
+    ];
 
     public ReportRenderRequest Adapt(JsonElement data)
     {
@@ -20,27 +24,54 @@ public sealed class LegacyReportRequestAdapter
         var raw = data.Clone();
         var parameters = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
         string? reportId = null;
+        string? fileName = null;
 
+        // 1. Process root properties
         foreach (var property in raw.EnumerateObject())
         {
             parameters[property.Name] = property.Value.Clone();
+            if (string.Equals(property.Name, "fileName", StringComparison.OrdinalIgnoreCase) && property.Value.ValueKind == JsonValueKind.String)
+                fileName = property.Value.GetString();
 
             if (reportId is null && ReportIdCandidates.Any(x =>
                     string.Equals(x, property.Name, StringComparison.OrdinalIgnoreCase)))
             {
-                reportId = JsonScalarToString(property.Value);
+                var str = JsonScalarToString(property.Value);
+                if (!string.IsNullOrWhiteSpace(str))
+                    reportId = str;
             }
         }
 
-        // The old implementation exposes a generic object contract. We preserve the entire
-        // payload in LegacyPayload so the production FastReport adapter can reproduce the
-        // old parameter semantics exactly instead of depending on this inference.
+        // 2. Check nested objects (e.g. data, report, params, request) for reportId, fileName, and additional parameters
+        foreach (var property in raw.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Object)
+                continue;
+
+            foreach (var subProp in property.Value.EnumerateObject())
+            {
+                if (!parameters.ContainsKey(subProp.Name))
+                    parameters[subProp.Name] = subProp.Value.Clone();
+
+                if (fileName is null && string.Equals(subProp.Name, "fileName", StringComparison.OrdinalIgnoreCase) && subProp.Value.ValueKind == JsonValueKind.String)
+                    fileName = subProp.Value.GetString();
+
+                if (reportId is null && ReportIdCandidates.Any(x =>
+                        string.Equals(x, subProp.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    var str = JsonScalarToString(subProp.Value);
+                    if (!string.IsNullOrWhiteSpace(str))
+                        reportId = str;
+                }
+            }
+        }
+
         return new ReportRenderRequest(
             ReportId: reportId ?? "LEGACY",
             Parameters: parameters,
             Profile: "legacy",
             Watermark: null,
-            FileName: null,
+            FileName: fileName,
             LegacyPayload: raw);
     }
 

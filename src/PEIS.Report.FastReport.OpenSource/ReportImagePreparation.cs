@@ -24,6 +24,16 @@ internal static class ReportImagePreparation
         IImageResolver resolver,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(template) || !template.Contains("<PictureObject", StringComparison.Ordinal))
+            return new Result(template, new ImageResolveBatch(new Dictionary<string, ResolvedImage>(), 0, 0, 0, 0));
+
+        var hasImageLocation = template.Contains("ImageLocation=\"http", StringComparison.OrdinalIgnoreCase) ||
+                               template.Contains("ImageLocation='http", StringComparison.OrdinalIgnoreCase);
+        var hasDataColumn = template.Contains("DataColumn=", StringComparison.OrdinalIgnoreCase);
+
+        if (!hasImageLocation && (!hasDataColumn || !HasAnyHttpUrlsInTables(tables)))
+            return new Result(template, new ImageResolveBatch(new Dictionary<string, ResolvedImage>(), 0, 0, 0, 0));
+
         var document = XDocument.Parse(template.TrimStart('\uFEFF', '\u0000', '\u200B'), LoadOptions.PreserveWhitespace);
         var pictures = document.Descendants("PictureObject").ToArray();
         var bindings = new List<Binding>();
@@ -88,6 +98,23 @@ internal static class ReportImagePreparation
     private static Uri? HttpUri(object? value) => value is string text
         && Uri.TryCreate(text, UriKind.Absolute, out var uri)
         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps) ? uri : null;
+
+    private static bool HasAnyHttpUrlsInTables(IReadOnlyDictionary<string, DataTable> tables)
+    {
+        foreach (var table in tables.Values)
+        {
+            foreach (DataColumn col in table.Columns)
+            {
+                if (col.DataType != typeof(string)) continue;
+                foreach (DataRow row in table.Rows)
+                {
+                    if (row[col] is string text && (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || text.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
 
     private static byte[] CreateUnavailableImageCore()
     {

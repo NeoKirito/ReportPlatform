@@ -15,9 +15,10 @@ namespace PEIS.Report.FastReport.OpenSource;
 /// </summary>
 internal static partial class LegacyFrxCompatibility
 {
-    private sealed record FrxCacheEntry(string NormalizedTemplate, IReadOnlySet<string> EmptyPageNames);
+    internal sealed record PageDataSourceInfo(string PageName, string[] DataSources);
+    internal sealed record TemplateMetadata(string NormalizedTemplate, IReadOnlyList<PageDataSourceInfo> Pages);
 
-    private static readonly ConcurrentDictionary<string, FrxCacheEntry> _cache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, TemplateMetadata> _cache = new(StringComparer.Ordinal);
     private const int MaxCacheSize = 128;
 
     public static string Normalize(string content)
@@ -73,25 +74,46 @@ internal static partial class LegacyFrxCompatibility
             || content.Contains("PageNofM", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Returns normalized FRX and empty-page names from cache, or computes and caches them.
-    /// Keyed by SHA256 of the raw template content.
+    /// Returns normalized FRX and dynamically computed empty-page names for the current request.
+    /// Template parsing is performed once and cached by template SHA256; page suppression is evaluated in O(1).
     /// </summary>
     public static (string NormalizedTemplate, IReadOnlySet<string> EmptyPageNames) GetNormalizedWithEmptyPages(
         string content,
         IReadOnlyDictionary<string, DataTable> tables)
     {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
-        if (_cache.TryGetValue(hash, out var cached))
-            return (cached.NormalizedTemplate, cached.EmptyPageNames);
+        if (!_cache.TryGetValue(hash, out var metadata))
+        {
+            var normalized = Normalize(content);
+            var pages = ExtractPageDataSources(normalized);
+            if (_cache.Count >= MaxCacheSize)
+                EvictOldest();
 
-        var normalized = Normalize(content);
-        var emptyPages = FindPagesWhoseDataSourcesAreAllEmpty(normalized, tables);
+            metadata = new TemplateMetadata(normalized, pages);
+            _cache.TryAdd(hash, metadata);
+        }
 
-        if (_cache.Count >= MaxCacheSize)
-            EvictOldest();
+        var emptyPages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (tables.Count > 0)
+        {
+            foreach (var page in metadata.Pages)
+            {
+                if (page.DataSources.Length == 0)
+                    continue;
 
-        _cache.TryAdd(hash, new FrxCacheEntry(normalized, emptyPages));
-        return (normalized, emptyPages);
+                var resolvedTables = page.DataSources
+                    .Select(dataSource => tables.FirstOrDefault(pair =>
+                        string.Equals(pair.Key, dataSource, StringComparison.OrdinalIgnoreCase)).Value)
+                    .ToArray();
+
+                if (resolvedTables.Any(table => table is null) || resolvedTables.Any(table => table.Rows.Count > 0))
+                    continue;
+
+                emptyPages.Add(page.PageName);
+            }
+        }
+
+        return (metadata.NormalizedTemplate, emptyPages);
     }
 
     private static void EvictOldest()
@@ -102,40 +124,39 @@ internal static partial class LegacyFrxCompatibility
             _cache.TryRemove(oldestKey, out _);
     }
 
-    public static IReadOnlySet<string> FindPagesWhoseDataSourcesAreAllEmpty(
-        string content,
-        IReadOnlyDictionary<string, DataTable> tables)
+    internal static IReadOnlyList<PageDataSourceInfo> ExtractPageDataSources(string content)
     {
-        ArgumentNullException.ThrowIfNull(tables);
-        if (string.IsNullOrWhiteSpace(content) || tables.Count == 0)
-            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(content))
+            return Array.Empty<PageDataSourceInfo>();
 
         var normalizedContent = content.TrimStart('\uFEFF', '\u0000', '\u200B');
         var document = XDocument.Parse(normalizedContent, LoadOptions.PreserveWhitespace);
-        var emptyPageNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var page in document.Descendants().Where(element => element.Name.LocalName == "ReportPage").ToArray())
+        var result = new List<PageDataSourceInfo>();
+
+        foreach (var page in document.Descendants().Where(element => element.Name.LocalName == "ReportPage"))
         {
+            var pageName = page.Attribute("Name")?.Value;
+            if (string.IsNullOrWhiteSpace(pageName))
+                continue;
+
             var dataSources = page.Descendants()
                 .Select(element => element.Attribute("DataSource")?.Value)
                 .Where(value => !string.IsNullOrWhiteSpace(value))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            if (dataSources.Length == 0)
-                continue;
 
-            var resolvedTables = dataSources
-                .Select(dataSource => tables.FirstOrDefault(pair =>
-                    string.Equals(pair.Key, dataSource, StringComparison.OrdinalIgnoreCase)).Value)
-                .ToArray();
-            if (resolvedTables.Any(table => table is null) || resolvedTables.Any(table => table.Rows.Count > 0))
-                continue;
-
-            var pageName = page.Attribute("Name")?.Value;
-            if (!string.IsNullOrWhiteSpace(pageName))
-                emptyPageNames.Add(pageName);
+            result.Add(new PageDataSourceInfo(pageName, dataSources!));
         }
 
-        return emptyPageNames;
+        return result;
+    }
+
+    public static IReadOnlySet<string> FindPagesWhoseDataSourcesAreAllEmpty(
+        string content,
+        IReadOnlyDictionary<string, DataTable> tables)
+    {
+        var (_, emptyPages) = GetNormalizedWithEmptyPages(content, tables);
+        return emptyPages;
     }
 
     private static string ConvertRtfText(string value)

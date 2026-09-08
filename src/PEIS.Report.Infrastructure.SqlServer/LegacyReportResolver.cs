@@ -22,6 +22,19 @@ public sealed record LegacyReportResolution(string DefinitionId, string Identifi
 /// </summary>
 public sealed class LegacyPayloadReportResolver : ILegacyReportResolver
 {
+    private static readonly string[] PreferredIdKeys =
+    [
+        "bbid", "djid", "reportId", "report_id", "bgurl", "bgid",
+        "templateId", "templateid", "cxid", "id", "xh", "djmc", "bgmc"
+    ];
+
+    private static readonly Dictionary<string, string> KnownNumericAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["724071198644850688"] = "jktjbbd",
+        ["773424455578746880"] = "tjsfd",
+        ["837103946955685888"] = "tjsfd"
+    };
+
     public LegacyReportResolution Resolve(ReportRenderRequest request)
     {
         if (request.LegacyPayload is not { ValueKind: JsonValueKind.Object } payload)
@@ -29,9 +42,57 @@ public sealed class LegacyPayloadReportResolver : ILegacyReportResolver
 
         var queryType = ReadScalar(payload, "querytype");
         var bbid = ReadScalar(payload, "bbid");
+
+        // 1. Confirmed legacy guide-sheet route: querytype=djwh + bbid
         if (string.Equals(queryType, "djwh", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(bbid))
         {
+            if (KnownNumericAliases.TryGetValue(bbid, out var mapped))
+                return new LegacyReportResolution(mapped, "legacy-payload:querytype=djwh;bbid->djid");
             return new LegacyReportResolution(bbid, "legacy-payload:querytype=djwh;bbid->djid");
+        }
+
+        // 2. Unverified querytype with typed report ID preserves fallback contract
+        if (!string.IsNullOrWhiteSpace(queryType) && !string.Equals(queryType, "djwh", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(request.ReportId) && !string.Equals(request.ReportId, "LEGACY", StringComparison.OrdinalIgnoreCase))
+        {
+            return new LegacyReportResolution(request.ReportId, "legacy-payload:unverified-id-family-fallback");
+        }
+
+        // 3. Check direct keys for universal resolution
+        foreach (var key in PreferredIdKeys)
+        {
+            var value = ReadScalar(payload, key);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                if (KnownNumericAliases.TryGetValue(value, out var mapped))
+                    return new LegacyReportResolution(mapped, $"legacy-payload:{key}->alias({value})");
+                return new LegacyReportResolution(value, $"legacy-payload:{key}");
+            }
+        }
+
+        // 4. Check nested objects
+        foreach (var prop in payload.EnumerateObject())
+        {
+            if (prop.Value.ValueKind != JsonValueKind.Object)
+                continue;
+
+            foreach (var key in PreferredIdKeys)
+            {
+                var value = ReadScalar(prop.Value, key);
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    if (KnownNumericAliases.TryGetValue(value, out var mapped))
+                        return new LegacyReportResolution(mapped, $"legacy-nested-payload:{prop.Name}.{key}->alias({value})");
+                    return new LegacyReportResolution(value, $"legacy-nested-payload:{prop.Name}.{key}");
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.ReportId) && !string.Equals(request.ReportId, "LEGACY", StringComparison.OrdinalIgnoreCase))
+        {
+            if (KnownNumericAliases.TryGetValue(request.ReportId, out var mapped))
+                return new LegacyReportResolution(mapped, "numeric-alias-map:" + request.ReportId);
+            return new LegacyReportResolution(request.ReportId, "typed-request-id:" + request.ReportId);
         }
 
         return new LegacyReportResolution(request.ReportId, "legacy-payload:unverified-id-family-fallback");

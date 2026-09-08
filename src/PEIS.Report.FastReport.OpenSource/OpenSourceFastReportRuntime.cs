@@ -1,6 +1,8 @@
+using System.Data;
 using System.Diagnostics;
 using System.Drawing;
 using FastReport;
+using FastReport.Data;
 using FastReport.Export.PdfSimple;
 using FastReport.Utils;
 using PEIS.Report.Contracts;
@@ -51,6 +53,8 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
                 if (source is not null)
                     source.Enabled = true;
             }
+            EnsureDataSourcesAndSchemas(report, context.Data.Tables);
+            ApplyParameters(report, context.Request);
             registerData.Stop();
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -80,10 +84,11 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
         FastReportReport report,
         IReadOnlySet<string> emptyDataPageNames)
     {
-        if (emptyDataPageNames.Count == 0)
+        if (emptyDataPageNames.Count == 0 || report.Pages.Count <= 1)
             return;
 
-        for (var index = report.Pages.Count - 1; index >= 0; index--)
+        // Never suppress the primary page (index 0); only trailing optional pages
+        for (var index = report.Pages.Count - 1; index > 0; index--)
         {
             if (report.Pages[index] is not ReportPage page || !emptyDataPageNames.Contains(page.Name))
                 break;
@@ -159,6 +164,127 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
         return Task.FromResult(new FastReportPdfOutput(stream.ToArray(), document.ExportedPageCount));
     }
 
+    private static void ApplyParameters(FastReportReport report, ReportRenderRequest request)
+    {
+        var parameters = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (key, element) in request.Parameters)
+            parameters[key] = JsonScalarToObject(element);
+
+        if (request.LegacyPayload is { ValueKind: System.Text.Json.JsonValueKind.Object } payload)
+            ExtractPayloadParameters(payload, parameters);
+
+        foreach (var (key, value) in parameters)
+        {
+            try
+            {
+                report.SetParameterValue(key, value);
+            }
+            catch
+            {
+                // Template may not define this parameter; ignore
+            }
+        }
+    }
+
+    private static void ExtractPayloadParameters(System.Text.Json.JsonElement element, Dictionary<string, object?> parameters)
+    {
+        if (element.ValueKind != System.Text.Json.JsonValueKind.Object) return;
+        foreach (var prop in element.EnumerateObject())
+        {
+            if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                ExtractPayloadParameters(prop.Value, parameters);
+            }
+            else if (!parameters.ContainsKey(prop.Name))
+            {
+                parameters[prop.Name] = JsonScalarToObject(prop.Value);
+            }
+        }
+    }
+
+    private static object? JsonScalarToObject(System.Text.Json.JsonElement element) => element.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.String => element.GetString(),
+        System.Text.Json.JsonValueKind.Number when element.TryGetInt64(out var l) => l,
+        System.Text.Json.JsonValueKind.Number when element.TryGetDecimal(out var d) => d,
+        System.Text.Json.JsonValueKind.True => true,
+        System.Text.Json.JsonValueKind.False => false,
+        System.Text.Json.JsonValueKind.Null => null,
+        _ => null
+    };
+
+    private static void EnsureDataSourcesAndSchemas(
+        FastReportReport report,
+        IReadOnlyDictionary<string, DataTable> tables)
+    {
+        foreach (Base b in report.Dictionary.DataSources)
+        {
+            if (b is not TableDataSource tds)
+                continue;
+
+            var refName = tds.ReferenceName ?? tds.Name;
+            DataTable? table = null;
+
+            // 1. Direct match by ReferenceName, Name, or Alias
+            if (!tables.TryGetValue(refName, out table) &&
+                !tables.TryGetValue(tds.Name, out table) &&
+                (string.IsNullOrWhiteSpace(tds.Alias) || !tables.TryGetValue(tds.Alias, out table)))
+            {
+                // 2. Intelligent column overlap match against available tables
+                if (tds.Columns.Count > 0)
+                {
+                    var bestOverlap = 0;
+                    DataTable? bestTable = null;
+                    foreach (var candidate in tables.Values)
+                    {
+                        var overlap = 0;
+                        foreach (Column col in tds.Columns)
+                        {
+                            if (candidate.Columns.Contains(col.Name))
+                                overlap++;
+                        }
+                        if (overlap > bestOverlap && overlap >= Math.Min(2, tds.Columns.Count))
+                        {
+                            bestOverlap = overlap;
+                            bestTable = candidate;
+                        }
+                    }
+                    if (bestTable is not null)
+                    {
+                        table = bestTable;
+                        report.RegisterData(table, refName);
+                        tds.Enabled = true;
+                    }
+                }
+            }
+
+            if (table is null)
+            {
+                // 3. No matching table registered: create an empty table with all declared columns so Roslyn compiles without errors
+                table = new DataTable(refName);
+                foreach (Column col in tds.Columns)
+                {
+                    table.Columns.Add(col.Name, col.DataType ?? typeof(string));
+                }
+                report.RegisterData(table, refName);
+                tds.Enabled = true;
+            }
+            else
+            {
+                // 4. Ensure all declared schema columns exist in the table so Roslyn compiles without errors
+                foreach (Column col in tds.Columns)
+                {
+                    if (!table.Columns.Contains(col.Name))
+                    {
+                        table.Columns.Add(col.Name, col.DataType ?? typeof(string));
+                    }
+                }
+                tds.Enabled = true;
+            }
+        }
+    }
+
     private sealed class OpenSourceFastReportPreparedDocument(
         FastReportReport report,
         int exportedPageCount) : IFastReportPreparedDocument
@@ -171,7 +297,22 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
         public ValueTask DisposeAsync()
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 0)
-                Report.Dispose();
+            {
+                try
+                {
+                    Report.PreparedPages?.Clear();
+                    Report.Dictionary?.Clear();
+                    Report.Clear();
+                }
+                catch
+                {
+                    // Ignore non-fatal cleanup errors
+                }
+                finally
+                {
+                    Report.Dispose();
+                }
+            }
             return ValueTask.CompletedTask;
         }
     }

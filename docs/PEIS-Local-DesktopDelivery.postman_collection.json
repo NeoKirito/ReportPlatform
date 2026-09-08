@@ -1,0 +1,145 @@
+{
+  "info": {
+    "name": "PEIS 本机桌面报告测试（192.168.0.88）",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "按 1–5 顺序执行。步骤 4 重复查询直到 Delivered，自动保存 remoteJobId。6 为可选打印请求：Agent 当前 DryRun 不出纸，若改为 Command 会实际打印。正常不用 stationId。Java 源码配置已经指向本机 .88:82，需运行进程加载新配置。 Java report.templateid 使用业务模板 bgurl=724071198644850688（个检报告），对应 FastReport bgid=jktjbbd；不能直接填 jktjbbd。当前 Java 会把原始 templateid 作为 Agent 的打印机记忆键。"
+  },
+  "variable": [
+    {
+      "key": "javaBaseUrl",
+      "value": "http://192.168.0.88:8095/TJ"
+    },
+    {
+      "key": "reportBaseUrl",
+      "value": "http://192.168.0.88:82"
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    },
+    {
+      "key": "remoteJobId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1 ReportApi 健康检查",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{reportBaseUrl}}/health"
+      }
+    },
+    {
+      "name": "2 Java 查询在线工作站",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{javaBaseUrl}}/exportTemplate/desktopReportDelivery/stations"
+      }
+    },
+    {
+      "name": "3 生成报告并在本机预览",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{javaBaseUrl}}/exportTemplate/desktopReportDelivery",
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"action\": \"Preview\",\r\n  \"report\": {\r\n    \"grtjgcjjgidArr\": [\r\n      \"C48E053041174B41B32C9CE9EB5ECE7F\"\r\n    ],\r\n    \"templateid\": \"724071198644850688\",\r\n    \"filename\": \"123456\"\r\n  }\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.data && body.data.jobId) pm.collectionVariables.set('jobId', body.data.jobId);",
+              "if (body.data && body.data.remoteJobId) pm.collectionVariables.set('remoteJobId', body.data.remoteJobId);",
+              "pm.test('业务响应成功', () => pm.expect(body.code).to.eql(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4 查询 Java 任务（重复至 Delivered）",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{javaBaseUrl}}/exportTemplate/desktopReportDelivery/{{jobId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.data && body.data.jobId) pm.collectionVariables.set('jobId', body.data.jobId);",
+              "if (body.data && body.data.remoteJobId) pm.collectionVariables.set('remoteJobId', body.data.remoteJobId);",
+              "pm.test('业务响应成功', () => pm.expect(body.code).to.eql(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5 查询 Agent 最终状态（应为 Opened）",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{reportBaseUrl}}/api/report-deliveries/{{remoteJobId}}"
+      }
+    },
+    {
+      "name": "6 可选：预览并打印（先确认 Agent 为 DryRun）",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{javaBaseUrl}}/exportTemplate/desktopReportDelivery",
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n  \"action\": \"PreviewAndPrint\",\r\n  \"copies\": 1,\r\n  \"duplex\": false,\r\n  \"report\": {\r\n    \"grtjgcjjgidArr\": [\r\n      \"C48E053041174B41B32C9CE9EB5ECE7F\"\r\n    ],\r\n    \"templateid\": \"724071198644850688\",\r\n    \"filename\": \"123456\"\r\n  }\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.data && body.data.jobId) pm.collectionVariables.set('jobId', body.data.jobId);",
+              "if (body.data && body.data.remoteJobId) pm.collectionVariables.set('remoteJobId', body.data.remoteJobId);",
+              "pm.test('业务响应成功', () => pm.expect(body.code).to.eql(0));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
