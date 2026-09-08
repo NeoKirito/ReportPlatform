@@ -1,6 +1,7 @@
 using System.Data;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Xml;
 using System.Xml.Linq;
 using PEIS.Report.Engine;
 
@@ -34,7 +35,15 @@ internal static class ReportImagePreparation
         if (!hasImageLocation && (!hasDataColumn || !HasAnyHttpUrlsInTables(tables)))
             return new Result(template, new ImageResolveBatch(new Dictionary<string, ResolvedImage>(), 0, 0, 0, 0));
 
-        var document = XDocument.Parse(template.TrimStart('\uFEFF', '\u0000', '\u200B'), LoadOptions.PreserveWhitespace);
+        XDocument document;
+        try
+        {
+            document = XDocument.Parse(template.TrimStart('\uFEFF', '\u0000', '\u200B'), LoadOptions.PreserveWhitespace);
+        }
+        catch (XmlException)
+        {
+            return new Result(template, new ImageResolveBatch(new Dictionary<string, ResolvedImage>(), 0, 0, 0, 0));
+        }
         var pictures = document.Descendants("PictureObject").ToArray();
         var bindings = new List<Binding>();
         var urls = new HashSet<Uri>();

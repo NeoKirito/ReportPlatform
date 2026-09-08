@@ -33,7 +33,15 @@ internal static partial class LegacyFrxCompatibility
             return content;
 
         var normalizedContent = content.TrimStart('\uFEFF', '\u0000', '\u200B');
-        var document = XDocument.Parse(normalizedContent, LoadOptions.PreserveWhitespace);
+        XDocument document;
+        try
+        {
+            document = XDocument.Parse(normalizedContent, LoadOptions.PreserveWhitespace);
+        }
+        catch (System.Xml.XmlException)
+        {
+            return content;
+        }
         var changed = false;
         if (containsRichObject)
         {
@@ -130,7 +138,15 @@ internal static partial class LegacyFrxCompatibility
             return Array.Empty<PageDataSourceInfo>();
 
         var normalizedContent = content.TrimStart('\uFEFF', '\u0000', '\u200B');
-        var document = XDocument.Parse(normalizedContent, LoadOptions.PreserveWhitespace);
+        XDocument document;
+        try
+        {
+            document = XDocument.Parse(normalizedContent, LoadOptions.PreserveWhitespace);
+        }
+        catch (System.Xml.XmlException)
+        {
+            return Array.Empty<PageDataSourceInfo>();
+        }
         var result = new List<PageDataSourceInfo>();
 
         foreach (var page in document.Descendants().Where(element => element.Name.LocalName == "ReportPage"))

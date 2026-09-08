@@ -71,6 +71,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
     private readonly LegacyReportSchemaMapping _schema;
     private readonly ILegacyReportResolver _resolver;
     private readonly TimeProvider _clock;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _resolvedIdCache = new(StringComparer.OrdinalIgnoreCase);
 
     public LegacyDatabaseReportDefinitionProvider(
         IOptions<ReportDatabaseOptions> database,
@@ -83,6 +84,110 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
         _resolver = resolver ?? new LegacyPayloadReportResolver();
         _clock = clock ?? TimeProvider.System;
         _schema.Validate();
+    }
+
+    private async Task<string> ResolveActualReportIdAsync(SqlConnection connection, string inputId, string? fileName, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(inputId))
+            return inputId;
+
+        if (_resolvedIdCache.TryGetValue(inputId, out var cached))
+            return cached;
+
+        // 1. Check if inputId directly matches DefinitionTable (djid or djmc)
+        var nameCondition = string.IsNullOrWhiteSpace(_schema.ReportNameColumn)
+            ? string.Empty
+            : $" OR {_schema.ReportNameColumn} = @id";
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandTimeout = TimeoutSeconds();
+            cmd.CommandText = $"SELECT TOP 1 {_schema.ReportIdColumn} FROM {_schema.DefinitionTable} WHERE {_schema.ReportIdColumn} = @id{nameCondition} ORDER BY CASE WHEN {_schema.ReportIdColumn} = @id THEN 0 ELSE 1 END";
+            cmd.Parameters.Add(new SqlParameter("@id", SqlDbType.NVarChar, 128) { Value = inputId });
+            var direct = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (direct is not null && direct is not DBNull)
+            {
+                var resolvedDirect = Convert.ToString(direct, System.Globalization.CultureInfo.InvariantCulture)!;
+                _resolvedIdCache[inputId] = resolvedDirect;
+                return resolvedDirect;
+            }
+        }
+
+        // 2. Check pe_xtcs_bgmb (by bgurl, bgmbid, or bgmbmc)
+        try
+        {
+            await using var cmd = connection.CreateCommand();
+            cmd.CommandTimeout = TimeoutSeconds();
+            cmd.CommandText = """
+                SELECT TOP 1 BGID 
+                FROM dbo.pe_xtcs_bgmb 
+                WHERE (bgurl = @id OR bgmbid = @id OR bgmbmc = @id) 
+                  AND BGID IS NOT NULL AND BGID <> ''
+                """;
+            cmd.Parameters.Add(new SqlParameter("@id", SqlDbType.NVarChar, 128) { Value = inputId });
+            var mapped = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            if (mapped is not null && mapped is not DBNull)
+            {
+                var resolvedMapped = Convert.ToString(mapped, System.Globalization.CultureInfo.InvariantCulture)!.Trim();
+                if (!string.IsNullOrEmpty(resolvedMapped))
+                {
+                    _resolvedIdCache[inputId] = resolvedMapped;
+                    return resolvedMapped;
+                }
+            }
+        }
+        catch (SqlException)
+        {
+            // pe_xtcs_bgmb might not exist in some custom databases, ignore and continue
+        }
+
+        // 3. If fileName is provided (e.g. 个人费用单据), check pe_xtcs_bgmb and DefinitionTable by fileName
+        if (!string.IsNullOrWhiteSpace(fileName) && !string.Equals(fileName, inputId, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                await using var cmd = connection.CreateCommand();
+                cmd.CommandTimeout = TimeoutSeconds();
+                cmd.CommandText = """
+                    SELECT TOP 1 BGID 
+                    FROM dbo.pe_xtcs_bgmb 
+                    WHERE bgmbmc = @fn 
+                      AND BGID IS NOT NULL AND BGID <> ''
+                    """;
+                cmd.Parameters.Add(new SqlParameter("@fn", SqlDbType.NVarChar, 128) { Value = fileName.Trim() });
+                var mapped = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (mapped is not null && mapped is not DBNull)
+                {
+                    var resolvedMapped = Convert.ToString(mapped, System.Globalization.CultureInfo.InvariantCulture)!.Trim();
+                    if (!string.IsNullOrEmpty(resolvedMapped))
+                    {
+                        _resolvedIdCache[inputId] = resolvedMapped;
+                        return resolvedMapped;
+                    }
+                }
+            }
+            catch (SqlException) { }
+
+            if (!string.IsNullOrWhiteSpace(_schema.ReportNameColumn))
+            {
+                try
+                {
+                    await using var cmd = connection.CreateCommand();
+                    cmd.CommandTimeout = TimeoutSeconds();
+                    cmd.CommandText = $"SELECT TOP 1 {_schema.ReportIdColumn} FROM {_schema.DefinitionTable} WHERE {_schema.ReportNameColumn} = @fn";
+                    cmd.Parameters.Add(new SqlParameter("@fn", SqlDbType.NVarChar, 128) { Value = fileName.Trim() });
+                    var direct = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                    if (direct is not null && direct is not DBNull)
+                    {
+                        var resolvedDirect = Convert.ToString(direct, System.Globalization.CultureInfo.InvariantCulture)!;
+                        _resolvedIdCache[inputId] = resolvedDirect;
+                        return resolvedDirect;
+                    }
+                }
+                catch (SqlException) { }
+            }
+        }
+
+        return inputId;
     }
 
     public async Task<ReportDefinitionVersion> GetVersionAsync(ReportRenderRequest request, CancellationToken cancellationToken)
@@ -102,13 +207,14 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
         {
             await using var connection = new SqlConnection(_database.ConnectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var reportIdToUse = await ResolveActualReportIdAsync(connection, resolution.DefinitionId, request.FileName, cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
             command.CommandTimeout = TimeoutSeconds();
             var nameCondition = string.IsNullOrWhiteSpace(_schema.ReportNameColumn)
                 ? string.Empty
                 : $" OR {_schema.ReportNameColumn} = @reportId";
             command.CommandText = $"SELECT TOP 1 {selected} FROM {_schema.DefinitionTable} WHERE {_schema.ReportIdColumn} = @reportId{nameCondition} ORDER BY CASE WHEN {_schema.ReportIdColumn} = @reportId THEN 0 ELSE 1 END";
-            command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = resolution.DefinitionId });
+            command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = reportIdToUse });
             var scalar = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             if (scalar is null || scalar is DBNull)
                 throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.ReportNotFound, $"Legacy report definition '{resolution.DefinitionId}' was not found.");
@@ -136,10 +242,11 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
         {
             await using var connection = new SqlConnection(_database.ConnectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            var reportIdToUse = await ResolveActualReportIdAsync(connection, resolution.DefinitionId, request.FileName, cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
             command.CommandTimeout = TimeoutSeconds();
             command.CommandText = BuildDefinitionQuery();
-            command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = resolution.DefinitionId });
+            command.Parameters.Add(new SqlParameter("@reportId", SqlDbType.NVarChar, 128) { Value = reportIdToUse });
             await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
             if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.ReportNotFound, $"Legacy report definition '{resolution.DefinitionId}' was not found.");

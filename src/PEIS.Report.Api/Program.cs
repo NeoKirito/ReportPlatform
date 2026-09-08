@@ -13,6 +13,60 @@ using PEIS.Report.FastReport.OpenSource;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Auto-discover config.ini from current dir, parent dir, or app base
+var candidateIniPaths = new[]
+{
+    Path.Combine(builder.Environment.ContentRootPath, "config.ini"),
+    Path.Combine(builder.Environment.ContentRootPath, "..", "config.ini"),
+    Path.Combine(AppContext.BaseDirectory, "config.ini"),
+    Path.Combine(AppContext.BaseDirectory, "..", "config.ini")
+};
+
+foreach (var iniPath in candidateIniPaths)
+{
+    if (File.Exists(iniPath))
+    {
+        try
+        {
+            foreach (var line in File.ReadAllLines(iniPath))
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrWhiteSpace(trimmed) || trimmed.StartsWith('#') || trimmed.StartsWith(';'))
+                    continue;
+                var sep = trimmed.IndexOf('=');
+                if (sep < 0) continue;
+                var key = trimmed.Substring(0, sep).Trim();
+                var val = trimmed.Substring(sep + 1).Trim();
+                if (string.Equals(key, "ConnectionString", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(val))
+                {
+                    var existing = builder.Configuration["ReportDatabase:ConnectionString"];
+                    if (string.IsNullOrWhiteSpace(existing) || existing.Contains("请填写"))
+                    {
+                        builder.Configuration["ReportDatabase:ConnectionString"] = val;
+                        builder.Configuration["WatermarkDatabase:ConnectionString"] = val;
+                    }
+                }
+                else if (string.Equals(key, "Port", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(val))
+                {
+                    if (string.IsNullOrWhiteSpace(builder.Configuration["Urls"]))
+                    {
+                        builder.Configuration["Urls"] = $"http://0.0.0.0:{val}";
+                    }
+                }
+            }
+        }
+        catch { }
+        break;
+    }
+}
+
+var dbConnStr = builder.Configuration.GetValue<string>("ReportDatabase:ConnectionString");
+if (!string.IsNullOrWhiteSpace(dbConnStr) && dbConnStr.Contains("请填写"))
+{
+    dbConnStr = null;
+    builder.Configuration["ReportDatabase:ConnectionString"] = string.Empty;
+}
+
 builder.Services.AddControllers();
 
 builder.Services.Configure<PrintRoutingOptions>(builder.Configuration.GetSection("PrintRouting"));
@@ -39,7 +93,21 @@ builder.Services.AddSingleton<PrintScenarioCatalog>();
 builder.Services.AddSingleton<IPdfArtifactStore, LocalPdfArtifactStore>();
 builder.Services.AddSingleton(new ReportDefinitionCache(
     builder.Configuration.GetValue<string>("ReportEngine:DefinitionCacheDirectory")));
-var definitionSource = builder.Configuration.GetValue<string>("ReportEngine:DefinitionSource") ?? "Deterministic";
+
+var definitionSource = builder.Configuration.GetValue<string>("ReportEngine:DefinitionSource");
+if (string.IsNullOrWhiteSpace(definitionSource) || string.Equals(definitionSource, "Deterministic", StringComparison.OrdinalIgnoreCase))
+{
+    if (!string.IsNullOrWhiteSpace(dbConnStr))
+    {
+        definitionSource = "LegacySqlServer";
+        builder.Configuration["ReportEngine:DefinitionSource"] = "LegacySqlServer";
+    }
+    else
+    {
+        definitionSource = "Deterministic";
+    }
+}
+
 if (string.Equals(definitionSource, "LegacySqlServer", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddSingleton<LegacyDatabaseReportDefinitionProvider>();
@@ -62,7 +130,14 @@ builder.Services.AddHttpClient("report-images");
 builder.Services.AddSingleton<IImageResolver>(sp => new ImageResolver(
     sp.GetRequiredService<IHttpClientFactory>().CreateClient("report-images"),
     sp.GetRequiredService<IOptions<ImageResolutionOptions>>().Value));
-var renderer = builder.Configuration.GetValue<string>("ReportEngine:Renderer") ?? "Stub";
+
+var renderer = builder.Configuration.GetValue<string>("ReportEngine:Renderer");
+if (string.IsNullOrWhiteSpace(renderer) || string.Equals(renderer, "Stub", StringComparison.OrdinalIgnoreCase))
+{
+    renderer = "FastReportOpenSource";
+    builder.Configuration["ReportEngine:Renderer"] = "FastReportOpenSource";
+}
+
 if (string.Equals(renderer, "FastReportOpenSource", StringComparison.OrdinalIgnoreCase))
 {
     OpenSourceFastReportRuntime.WarmupCompiler();

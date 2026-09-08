@@ -20,15 +20,35 @@ public sealed class ReportsController(
     [HttpGet]
     public IActionResult Test() => Ok("OK");
 
+    [HttpGet("/TJ/exportTemplate/exportPdf")]
+    [HttpGet("/BaseInfo/Report/GetReportByJson")]
     [HttpPost]
     [HttpPost("/BaseInfo/Report/GetReportByJson")]
+    [HttpPost("/TJ/exportTemplate/exportPdf")]
     public async Task<IActionResult> GetReportByJson(
-        [FromBody] JsonElement data,
+        [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] JsonElement? data,
         CancellationToken cancellationToken)
     {
         try
         {
-            var request = adapter.Adapt(data);
+            JsonElement payload;
+            if (data.HasValue && data.Value.ValueKind == JsonValueKind.Object)
+            {
+                payload = data.Value;
+            }
+            else
+            {
+                var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var query in Request.Query)
+                {
+                    dict[query.Key] = query.Value.ToString();
+                }
+                var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(dict);
+                using var doc = JsonDocument.Parse(jsonBytes);
+                payload = doc.RootElement.Clone();
+            }
+
+            var request = adapter.Adapt(payload);
             var result = await renderer.RenderPdfAsync(request, cancellationToken);
 
             if (result.UnavailableImageCount > 0)
