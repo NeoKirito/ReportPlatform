@@ -22,9 +22,11 @@ public sealed class ReportsController(
 
     [HttpGet("/TJ/exportTemplate/exportPdf")]
     [HttpGet("/BaseInfo/Report/GetReportByJson")]
+    [HttpGet("/jmreport/exportPdfStream")]
     [HttpPost]
     [HttpPost("/BaseInfo/Report/GetReportByJson")]
     [HttpPost("/TJ/exportTemplate/exportPdf")]
+    [HttpPost("/jmreport/exportPdfStream")]
     public async Task<IActionResult> GetReportByJson(
         [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] JsonElement? data,
         CancellationToken cancellationToken)

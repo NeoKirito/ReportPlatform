@@ -39,9 +39,17 @@ public sealed class LegacyCompatibilityTests
         Assert.NotNull(controllerRoute);
         Assert.Equal("api/[controller]/[action]", controllerRoute!.Template);
         Assert.NotNull(pdfMethod);
-        var pdfRoutes = pdfMethod!.GetCustomAttributes<HttpPostAttribute>().ToArray();
-        Assert.Contains(pdfRoutes, route => route.Template is null);
-        Assert.Contains(pdfRoutes, route => route.Template == "/BaseInfo/Report/GetReportByJson");
+        var pdfPostRoutes = pdfMethod!.GetCustomAttributes<HttpPostAttribute>().ToArray();
+        Assert.Contains(pdfPostRoutes, route => route.Template is null);
+        Assert.Contains(pdfPostRoutes, route => route.Template == "/BaseInfo/Report/GetReportByJson");
+        Assert.Contains(pdfPostRoutes, route => route.Template == "/TJ/exportTemplate/exportPdf");
+        Assert.Contains(pdfPostRoutes, route => route.Template == "/jmreport/exportPdfStream");
+
+        var pdfGetRoutes = pdfMethod!.GetCustomAttributes<HttpGetAttribute>().ToArray();
+        Assert.Contains(pdfGetRoutes, route => route.Template == "/BaseInfo/Report/GetReportByJson");
+        Assert.Contains(pdfGetRoutes, route => route.Template == "/TJ/exportTemplate/exportPdf");
+        Assert.Contains(pdfGetRoutes, route => route.Template == "/jmreport/exportPdfStream");
+
         Assert.Equal("GetReportByJson", pdfMethod.Name);
         Assert.NotNull(docxMethod);
         Assert.NotNull(docxMethod!.GetCustomAttribute<HttpPostAttribute>());
@@ -66,6 +74,23 @@ public sealed class LegacyCompatibilityTests
         Assert.Equal("legacy.pdf", file.FileDownloadName);
         Assert.Equal(new byte[] { 1, 2, 3 }, file.FileContents);
         Assert.Equal(unavailableImages == 0 ? "" : "2", controller.Response.Headers["X-ReportPlatform-Unavailable-Images"].ToString());
+    }
+
+    [Fact]
+    public async Task Controller_parses_query_string_when_body_is_empty()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.QueryString = new QueryString("?templateid=773424455578746880&filename=测试单据&tjjfjlid=123");
+        var controller = new ReportsController(new FixedPdfRenderer(), new FixedDocxExporter(), new LegacyReportRequestAdapter())
+        {
+            ControllerContext = new ControllerContext { HttpContext = httpContext }
+        };
+
+        var action = await controller.GetReportByJson(null, CancellationToken.None);
+
+        var file = Assert.IsType<FileContentResult>(action);
+        Assert.Equal("application/pdf", file.ContentType);
+        Assert.Equal("legacy.pdf", file.FileDownloadName);
     }
 
     [Fact]
