@@ -252,4 +252,105 @@ public class UniversalPipelineLiveTests
         Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(result.Pdf.AsSpan(0, Math.Min(5, result.Pdf.Length))));
         _output.WriteLine($"[PASS] Fee Receipt Report: {result.PageCount} pages, {result.Pdf.Length} bytes PDF generated!");
     }
+
+    [Fact]
+    public async Task Test_UserScenario_XuYanXue_OccupationalReport()
+    {
+        var dbOptions = Options.Create(new ReportDatabaseOptions
+        {
+            Provider = "SqlServer",
+            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            CommandTimeoutSeconds = 30
+        });
+
+        var schemaMapping = Options.Create(new LegacyReportSchemaMapping
+        {
+            DefinitionTable = "dbo.xt_bgdy_djwh_zzj",
+            ReportIdColumn = "djid",
+            ReportNameColumn = "djmc",
+            TemplateColumn = "dj_frx",
+            SqlColumn = "djsql",
+            TemplateContentEncoding = "Base64Utf8",
+            FirstResultSetTableName = "Master",
+            SupplementalQueryOrderColumn = "xh",
+            TemplateKeyPrefix = "legacy-djwh"
+        });
+
+        var resolver = new LegacyPayloadReportResolver();
+        var defProvider = new LegacyDatabaseReportDefinitionProvider(dbOptions, schemaMapping, TimeProvider.System, resolver);
+        var templateProvider = new LegacyDatabaseTemplateProvider();
+        var binder = new AdoNetLegacyQueryParameterBinder();
+        var dataProvider = new SqlServerReportDataProvider(dbOptions, binder);
+        var imageResolver = new ImageResolver(new HttpClient(), new ImageResolutionOptions { TimeoutSeconds = 1, MaxConcurrentFetches = 12, FailureCacheSeconds = 3600 });
+        var runtime = new OpenSourceFastReportRuntime(imageResolver);
+        var telemetry = new InMemoryReportRenderTelemetry();
+        using var watermark = new SqlServerWatermarkTextProvider(Options.Create(new WatermarkDatabaseOptions()), dbOptions);
+
+        var renderer = new FastReportReportRenderer(
+            new ReportDefinitionCache(),
+            defProvider,
+            templateProvider,
+            dataProvider,
+            new RenderConcurrencyGate(new RenderConcurrencyOptions { MaxConcurrentRenders = 4 }),
+            runtime,
+            watermark,
+            telemetry);
+
+        var payloadJson = """
+        {
+            "hospitalid": "1",
+            "tjryidArr": "D6AE391A866B4D028C090A6A5923854D",
+            "filename": "徐燕雪（陈欣欣）        ",
+            "grtjgcjjgidArr": "D832A2277D9C4FCD854A75091CC11D77",
+            "url": "http://192.168.0.237:8081/jmreport/exportPdfStream",
+            "templateid": "837209944550735872"
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(payloadJson);
+        var parameters = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prop in doc.RootElement.EnumerateObject())
+            parameters[prop.Name] = prop.Value.Clone();
+
+        var request = new ReportRenderRequest(
+            "837209944550735872",
+            parameters,
+            "legacy",
+            null,
+            "徐燕雪（陈欣欣）        ",
+            doc.RootElement.Clone());
+
+        var swTotal = System.Diagnostics.Stopwatch.StartNew();
+
+        // 1. Definition resolution
+        var swDef = System.Diagnostics.Stopwatch.StartNew();
+        var definition = await defProvider.GetRequiredAsync(request, CancellationToken.None);
+        swDef.Stop();
+        _output.WriteLine($"[TIMING] Definition resolution: {swDef.ElapsedMilliseconds} ms (ReportId={definition.ReportId}, Key={definition.TemplateKey})");
+
+        // 2. Data queries
+        var swData = System.Diagnostics.Stopwatch.StartNew();
+        var data = await dataProvider.QueryAsync(definition, request, CancellationToken.None);
+        swData.Stop();
+        _output.WriteLine($"[TIMING] Data retrieval: {swData.ElapsedMilliseconds} ms ({data.Tables.Count} tables retrieved)");
+        foreach (var kvp in data.Tables)
+        {
+            _output.WriteLine($"    Table '{kvp.Key}': {kvp.Value.Rows.Count} rows, {kvp.Value.Columns.Count} cols");
+        }
+
+        // 3. Render PDF
+        var swRender = System.Diagnostics.Stopwatch.StartNew();
+        var result = await renderer.RenderPdfAsync(request, CancellationToken.None);
+        swRender.Stop();
+        swTotal.Stop();
+
+        _output.WriteLine($"[TIMING] Full RenderPdfAsync: {swRender.ElapsedMilliseconds} ms");
+        _output.WriteLine($"[TIMING] Total Time: {swTotal.ElapsedMilliseconds} ms");
+        _output.WriteLine($"[PASS] Xu Yan Xue Report: {result.PageCount} pages, {result.Pdf.Length} bytes PDF generated!");
+
+        Assert.NotNull(result);
+        Assert.True(result.PageCount > 0);
+        Assert.NotEmpty(result.Pdf);
+        Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(result.Pdf.AsSpan(0, Math.Min(5, result.Pdf.Length))));
+    }
 }
