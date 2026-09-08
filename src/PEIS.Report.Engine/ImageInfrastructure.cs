@@ -6,10 +6,15 @@ namespace PEIS.Report.Engine;
 
 public sealed class ImageResolutionOptions
 {
-    public int MaxConcurrentFetches { get; set; } = 4;
+    public int MaxConcurrentFetches { get; set; } = 12;
     public int TimeoutSeconds { get; set; } = 3;
-    public int MaxCachedItems { get; set; } = 256;
-    public int FailureCacheSeconds { get; set; } = 300;
+    public int TimeoutMilliseconds { get; set; } = 300;
+    public int MaxCachedItems { get; set; } = 1024;
+    public int FailureCacheSeconds { get; set; } = 3600;
+
+    public TimeSpan EffectiveTimeout => TimeoutMilliseconds > 0
+        ? TimeSpan.FromMilliseconds(TimeoutMilliseconds)
+        : TimeSpan.FromSeconds(Math.Max(0.1, TimeoutSeconds));
 }
 
 public sealed record ResolvedImage(
@@ -104,8 +109,10 @@ public sealed class ImageResolver : IImageResolver
         _options = options ?? throw new ArgumentNullException(nameof(options));
         if (_options.MaxConcurrentFetches is < 1 or > 64)
             throw new ArgumentOutOfRangeException(nameof(options.MaxConcurrentFetches));
-        if (_options.TimeoutSeconds is < 1 or > 120)
+        if (_options.TimeoutSeconds is < 0 or > 120)
             throw new ArgumentOutOfRangeException(nameof(options.TimeoutSeconds));
+        if (_options.TimeoutMilliseconds is < 0 or > 120000)
+            throw new ArgumentOutOfRangeException(nameof(options.TimeoutMilliseconds));
         if (_options.FailureCacheSeconds is < 1 or > 86400)
             throw new ArgumentOutOfRangeException(nameof(options.FailureCacheSeconds));
         _cache = new LruImageCache(_options.MaxCachedItems);
@@ -179,7 +186,7 @@ public sealed class ImageResolver : IImageResolver
             {
                 var timer = Stopwatch.StartNew();
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeout.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
+                timeout.CancelAfter(_options.EffectiveTimeout);
                 using var response = await _httpClient.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
                 response.EnsureSuccessStatusCode();
                 var bytes = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);

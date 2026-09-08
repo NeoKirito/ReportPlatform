@@ -127,15 +127,8 @@ internal static class ReportImagePreparation
 
     private static byte[] CreateUnavailableImageCore()
     {
-        using var bitmap = new Bitmap(440, 100);
-        using var graphics = Graphics.FromImage(bitmap);
-        graphics.Clear(Color.WhiteSmoke);
-        using var border = new Pen(Color.Firebrick, 2);
-        graphics.DrawRectangle(border, 1, 1, 437, 97);
-        using var font = new Font("Arial", 17, FontStyle.Bold);
-        using var brush = new SolidBrush(Color.Firebrick);
-        using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        graphics.DrawString("IMAGE UNAVAILABLE", font, brush, new RectangleF(4, 4, 432, 92), format);
+        using var bitmap = new Bitmap(1, 1, PixelFormat.Format32bppArgb);
+        bitmap.SetPixel(0, 0, Color.Transparent);
         using var stream = new MemoryStream();
         bitmap.Save(stream, ImageFormat.Png);
         return stream.ToArray();

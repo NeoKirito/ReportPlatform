@@ -281,7 +281,7 @@ public class UniversalPipelineLiveTests
         var templateProvider = new LegacyDatabaseTemplateProvider();
         var binder = new AdoNetLegacyQueryParameterBinder();
         var dataProvider = new SqlServerReportDataProvider(dbOptions, binder);
-        var imageResolver = new ImageResolver(new HttpClient(), new ImageResolutionOptions { TimeoutSeconds = 1, MaxConcurrentFetches = 12, FailureCacheSeconds = 3600 });
+        var imageResolver = new ImageResolver(new HttpClient(), new ImageResolutionOptions { TimeoutMilliseconds = 300, MaxConcurrentFetches = 12, FailureCacheSeconds = 3600 });
         var runtime = new OpenSourceFastReportRuntime(imageResolver);
         var telemetry = new InMemoryReportRenderTelemetry();
         using var watermark = new SqlServerWatermarkTextProvider(Options.Create(new WatermarkDatabaseOptions()), dbOptions);
