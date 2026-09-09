@@ -13,3 +13,4 @@ temp-api-publish/
 deploy/portable/
 .preflight-transfer/
 *.zip
+scratch/
