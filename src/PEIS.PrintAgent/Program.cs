@@ -84,5 +84,6 @@ if (string.Equals(mode, "Command", StringComparison.OrdinalIgnoreCase) || string
 else
     builder.Services.AddSingleton<IPrintBackend, DryRunPrintBackend>();
 
+builder.Services.AddHostedService<TrayIconService>();
 builder.Services.AddHostedService<AgentWorker>();
 await builder.Build().RunAsync();

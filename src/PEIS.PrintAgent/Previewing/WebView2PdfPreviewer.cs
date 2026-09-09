@@ -10,8 +10,8 @@ namespace PEIS.PrintAgent.Previewing;
 
 /// <summary>
 /// Opens each PDF on its own STA UI thread so the existing Generic Host and print queues remain unchanged.
-/// OpenAsync completes after WebView2 has initialized and accepted the local PDF URI; it does not wait for the user
-/// to close the window.
+/// Forces the window to the very top layer of the desktop (SW_RESTORE + HWND_TOPMOST + SetForegroundWindow)
+/// so operators immediately see the preview and print options.
 /// </summary>
 public sealed class WebView2PdfPreviewer(
     IOptions<AgentOptions> options,
@@ -19,6 +19,69 @@ public sealed class WebView2PdfPreviewer(
 {
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+
+    private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+    private const int SW_RESTORE = 9;
+
+    public static void ForceForegroundWindow(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero) return;
+        try
+        {
+            ShowWindow(hWnd, SW_RESTORE);
+            SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+
+            var foregroundWnd = GetForegroundWindow();
+            var foregroundThreadId = GetWindowThreadProcessId(foregroundWnd, IntPtr.Zero);
+            var currentThreadId = GetCurrentThreadId();
+
+            if (foregroundThreadId != 0 && foregroundThreadId != currentThreadId)
+            {
+                AttachThreadInput(currentThreadId, foregroundThreadId, true);
+                BringWindowToTop(hWnd);
+                SetForegroundWindow(hWnd);
+                AttachThreadInput(currentThreadId, foregroundThreadId, false);
+            }
+            else
+            {
+                BringWindowToTop(hWnd);
+                SetForegroundWindow(hWnd);
+            }
+            SwitchToThisWindow(hWnd, true);
+        }
+        catch
+        {
+            // Best effort window activation
+        }
+    }
+
     public Task OpenAsync(PdfPreviewRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -56,10 +119,11 @@ public sealed class WebView2PdfPreviewer(
         var preview = options.Value.Preview;
         var form = new Form
         {
-            Text = string.IsNullOrWhiteSpace(request.Title) ? "PEIS 报告预览" : request.Title,
+            Text = string.IsNullOrWhiteSpace(request.Title) ? "PEIS 报告预览与打印" : request.Title,
             Width = Math.Clamp(preview.WindowWidth, 700, 2400),
             Height = Math.Clamp(preview.WindowHeight, 500, 1600),
             StartPosition = FormStartPosition.CenterScreen,
+            WindowState = FormWindowState.Normal,
             MinimumSize = new Size(700, 500),
             TopMost = true,
             ShowInTaskbar = true
@@ -68,21 +132,30 @@ public sealed class WebView2PdfPreviewer(
         var toolbar = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 44,
+            Height = 46,
             FlowDirection = FlowDirection.LeftToRight,
             Padding = new Padding(8, 6, 8, 4),
             WrapContents = false
         };
+
         var status = new Label
         {
             AutoSize = true,
             Text = "正在加载 PDF…",
-            Padding = new Padding(8, 7, 8, 0)
+            Padding = new Padding(8, 8, 8, 0)
         };
         toolbar.Controls.Add(status);
 
         if (request.PrintAsync is not null)
         {
+            var printerLabel = new Label
+            {
+                Text = "目标打印机:",
+                AutoSize = true,
+                Padding = new Padding(6, 8, 2, 0)
+            };
+            toolbar.Controls.Add(printerLabel);
+
             var printer = new ComboBox
             {
                 DropDownStyle = ComboBoxStyle.DropDownList,
@@ -100,7 +173,7 @@ public sealed class WebView2PdfPreviewer(
             }
             toolbar.Controls.Add(printer);
 
-            var print = new Button { Text = "打印", AutoSize = true };
+            var print = new Button { Text = "立即打印", AutoSize = true, Font = new Font(Control.DefaultFont, FontStyle.Bold) };
             print.Enabled = printer.Items.Count > 0;
             print.Click += async (_, _) =>
             {
@@ -129,28 +202,32 @@ public sealed class WebView2PdfPreviewer(
             toolbar.Controls.Add(print);
         }
 
+        var topMostCheck = new CheckBox
+        {
+            Text = "保持置顶",
+            Checked = true,
+            AutoSize = true,
+            Padding = new Padding(12, 6, 8, 0)
+        };
+        topMostCheck.CheckedChanged += (_, _) =>
+        {
+            form.TopMost = topMostCheck.Checked;
+            if (topMostCheck.Checked)
+            {
+                ForceForegroundWindow(form.Handle);
+            }
+        };
+        toolbar.Controls.Add(topMostCheck);
+
         var webView = new WebView2 { Dock = DockStyle.Fill };
         form.Controls.Add(webView);
         form.Controls.Add(toolbar);
+
         form.Shown += async (_, _) =>
         {
             try
             {
-                form.Activate();
-                form.BringToFront();
-                SetForegroundWindow(form.Handle);
-
-                _ = Task.Delay(2000).ContinueWith(_ =>
-                {
-                    try
-                    {
-                        if (!form.IsDisposed && form.IsHandleCreated)
-                        {
-                            form.BeginInvoke(new Action(() => form.TopMost = false));
-                        }
-                    }
-                    catch { }
-                });
+                ForceForegroundWindow(form.Handle);
 
                 if (!webView.IsHandleCreated)
                 {
@@ -165,6 +242,7 @@ public sealed class WebView2PdfPreviewer(
                     await webView.EnsureCoreWebView2Async(env);
                     webView.Source = new Uri(Path.GetFullPath(request.PdfPath));
                     status.Text = Path.GetFileName(request.PdfPath);
+                    ForceForegroundWindow(form.Handle);
                     opened.TrySetResult();
                 }
                 catch (Exception webViewEx)
@@ -176,8 +254,10 @@ public sealed class WebView2PdfPreviewer(
                         Process.Start(new ProcessStartInfo
                         {
                             FileName = Path.GetFullPath(request.PdfPath),
-                            UseShellExecute = true
+                            UseShellExecute = true,
+                            WindowStyle = ProcessWindowStyle.Normal
                         });
+                        ForceForegroundWindow(form.Handle);
                         opened.TrySetResult();
                     }
                     catch (Exception fallbackEx)
@@ -196,6 +276,7 @@ public sealed class WebView2PdfPreviewer(
                 opened.TrySetException(ex);
             }
         };
+
         form.FormClosed += (_, _) => webView.Dispose();
         return form;
     }
