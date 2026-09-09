@@ -36,6 +36,14 @@ public interface IReportDefinitionProvider
     Task<ReportDefinition> GetRequiredAsync(ReportRenderRequest request, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Allows discovering all available report template identifiers for cataloging, health monitoring, and pre-warming.
+/// </summary>
+public interface IReportCatalogProvider
+{
+    Task<IReadOnlyList<string>> ListReportIdsAsync(CancellationToken cancellationToken);
+}
+
 public interface ITemplateProvider
 {
     Task<ReportTemplate> GetRequiredAsync(ReportDefinition definition, CancellationToken cancellationToken);
@@ -223,8 +231,15 @@ public sealed record ReportDefinitionCacheSnapshot(long Hits, long Misses, int E
 /// Deterministic provider for local development, CI, and environments without a supplied legacy database.
 /// It is intentionally a provider implementation rather than a hidden fallback in business controllers.
 /// </summary>
-public sealed class DeterministicReportDefinitionProvider : IReportDefinitionProvider
+public sealed class DeterministicReportDefinitionProvider : IReportDefinitionProvider, IReportCatalogProvider
 {
+    public Task<IReadOnlyList<string>> ListReportIdsAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<string> sample = ["deterministic-sample-1", "deterministic-sample-2"];
+        return Task.FromResult(sample);
+    }
+
     public Task<ReportDefinition> GetRequiredAsync(ReportRenderRequest request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

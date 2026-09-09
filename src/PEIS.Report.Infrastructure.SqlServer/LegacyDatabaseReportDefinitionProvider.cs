@@ -65,7 +65,7 @@ public sealed class LegacyReportSchemaMapping
     }
 }
 
-public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionProvider, IReportDefinitionVersionProvider
+public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionProvider, IReportDefinitionVersionProvider, IReportCatalogProvider
 {
     private readonly ReportDatabaseOptions _database;
     private readonly LegacyReportSchemaMapping _schema;
@@ -188,6 +188,71 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
         }
 
         return inputId;
+    }
+
+    public async Task<IReadOnlyList<string>> ListReportIdsAsync(CancellationToken cancellationToken)
+    {
+        EnsureConfigured();
+        var results = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            await using var connection = new SqlConnection(_database.ConnectionString);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            // 1. Query DefinitionTable (e.g. dbo.xt_bgdy_djwh_zzj) for all reports with non-empty template
+            var templateCondition = string.IsNullOrWhiteSpace(_schema.TemplateColumn)
+                ? string.Empty
+                : $" WHERE {_schema.TemplateColumn} IS NOT NULL AND {_schema.TemplateColumn} <> ''";
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandTimeout = TimeoutSeconds();
+                command.CommandText = $"SELECT DISTINCT {_schema.ReportIdColumn} FROM {_schema.DefinitionTable}{templateCondition} ORDER BY {_schema.ReportIdColumn}";
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var id = Convert.ToString(reader.GetValue(0), System.Globalization.CultureInfo.InvariantCulture)?.Trim();
+                    if (!string.IsNullOrWhiteSpace(id) && seen.Add(id))
+                    {
+                        results.Add(id);
+                    }
+                }
+            }
+
+            // 2. Also query pe_xtcs_bgmb for active FastReport templates (dygs = '2')
+            try
+            {
+                await using var command = connection.CreateCommand();
+                command.CommandTimeout = TimeoutSeconds();
+                command.CommandText = """
+                    SELECT DISTINCT bgurl 
+                    FROM dbo.pe_xtcs_bgmb 
+                    WHERE dygs = '2' AND bgurl IS NOT NULL AND bgurl <> ''
+                    ORDER BY bgurl
+                    """;
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    var bgurl = Convert.ToString(reader.GetValue(0), System.Globalization.CultureInfo.InvariantCulture)?.Trim();
+                    if (!string.IsNullOrWhiteSpace(bgurl) && seen.Add(bgurl))
+                    {
+                        results.Add(bgurl);
+                    }
+                }
+            }
+            catch (SqlException)
+            {
+                // pe_xtcs_bgmb may not be present in all environments, ignore if absent
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new LegacyReportDatabaseException(LegacyReportDatabaseErrorCode.DatabaseConnectionFailed, $"Failed to query report catalog: {ex.Message}", ex);
+        }
+
+        return results;
     }
 
     public async Task<ReportDefinitionVersion> GetVersionAsync(ReportRenderRequest request, CancellationToken cancellationToken)

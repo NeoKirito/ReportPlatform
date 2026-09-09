@@ -113,13 +113,16 @@ if (string.Equals(definitionSource, "LegacySqlServer", StringComparison.OrdinalI
     builder.Services.AddSingleton<LegacyDatabaseReportDefinitionProvider>();
     builder.Services.AddSingleton<IReportDefinitionProvider>(sp => sp.GetRequiredService<LegacyDatabaseReportDefinitionProvider>());
     builder.Services.AddSingleton<IReportDefinitionVersionProvider>(sp => sp.GetRequiredService<LegacyDatabaseReportDefinitionProvider>());
+    builder.Services.AddSingleton<IReportCatalogProvider>(sp => sp.GetRequiredService<LegacyDatabaseReportDefinitionProvider>());
     builder.Services.AddSingleton<ITemplateProvider, LegacyDatabaseTemplateProvider>();
     builder.Services.AddSingleton<ILegacyQueryParameterBinder, AdoNetLegacyQueryParameterBinder>();
     builder.Services.AddSingleton<IReportDataProvider, SqlServerReportDataProvider>();
 }
 else
 {
-    builder.Services.AddSingleton<IReportDefinitionProvider, DeterministicReportDefinitionProvider>();
+    builder.Services.AddSingleton<DeterministicReportDefinitionProvider>();
+    builder.Services.AddSingleton<IReportDefinitionProvider>(sp => sp.GetRequiredService<DeterministicReportDefinitionProvider>());
+    builder.Services.AddSingleton<IReportCatalogProvider>(sp => sp.GetRequiredService<DeterministicReportDefinitionProvider>());
     builder.Services.AddSingleton<ITemplateProvider, DeterministicTemplateProvider>();
     builder.Services.AddSingleton<IReportDataProvider, EmptyReportDataProvider>();
 }

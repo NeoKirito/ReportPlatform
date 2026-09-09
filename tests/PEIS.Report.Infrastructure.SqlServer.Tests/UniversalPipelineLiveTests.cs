@@ -455,5 +455,68 @@ public class UniversalPipelineLiveTests
         Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(result.Pdf.AsSpan(0, Math.Min(5, result.Pdf.Length))));
         _output.WriteLine($"[PASS] tjdj PDF generated: {result.PageCount} pages, {result.Pdf.Length} bytes");
     }
+
+    [Fact]
+    public async Task Test_DynamicReportDiscoveryAndWarmupResilience()
+    {
+        var dbOptions = Options.Create(new ReportDatabaseOptions
+        {
+            Provider = "SqlServer",
+            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            CommandTimeoutSeconds = 30
+        });
+
+        var schemaMapping = Options.Create(new LegacyReportSchemaMapping
+        {
+            DefinitionTable = "dbo.xt_bgdy_djwh_zzj",
+            ReportIdColumn = "djid",
+            ReportNameColumn = "djmc",
+            TemplateColumn = "dj_frx",
+            SqlColumn = "djsql",
+            TemplateContentEncoding = "Base64Utf8",
+            FirstResultSetTableName = "Master",
+            SupplementalQueryOrderColumn = "xh",
+            TemplateKeyPrefix = "legacy-djwh"
+        });
+
+        var resolver = new LegacyPayloadReportResolver();
+        var defProvider = new LegacyDatabaseReportDefinitionProvider(dbOptions, schemaMapping, TimeProvider.System, resolver);
+        var templateProvider = new LegacyDatabaseTemplateProvider();
+        var cache = new ReportDefinitionCache();
+
+        // 1. Test discovery
+        var discovered = await defProvider.ListReportIdsAsync(CancellationToken.None);
+        Assert.NotEmpty(discovered);
+        _output.WriteLine($"[DISCOVERY] Discovered {discovered.Count} report templates: {string.Join(", ", discovered)}");
+        Assert.Contains("tjdj", discovered);
+        Assert.Contains("jktjbbd", discovered);
+
+        // 2. Test warmup simulation with intentional bad report injected
+        var testQueue = new List<string>(discovered);
+        testQueue.Add("intentionally_invalid_report_12345");
+
+        int success = 0;
+        int failed = 0;
+
+        foreach (var reportId in testQueue)
+        {
+            try
+            {
+                var req = new ReportRenderRequest(reportId, new Dictionary<string, JsonElement>());
+                var def = await cache.GetOrCreateAsync(reportId, token => defProvider.GetRequiredAsync(req, token), CancellationToken.None);
+                await templateProvider.GetRequiredAsync(def, CancellationToken.None);
+                success++;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                _output.WriteLine($"[WARMUP-ISOLATION] Safely caught and skipped faulty report '{reportId}': {ex.Message}");
+            }
+        }
+
+        _output.WriteLine($"[WARMUP-SUMMARY] Total={testQueue.Count}, Success={success}, Skipped={failed}");
+        Assert.True(failed >= 1, "Should catch and skip at least the injected invalid report");
+        Assert.True(success >= 20, "Should successfully preload all valid reports");
+    }
 }
 
