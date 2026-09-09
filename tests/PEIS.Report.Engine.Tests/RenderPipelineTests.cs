@@ -74,4 +74,43 @@ public sealed class RenderPipelineTests
         using var second = await pending;
         Assert.Equal(1, gate.Snapshot().Active);
     }
+
+    [Fact]
+    public async Task FastReport_renderer_throws_ReportNotFound_when_page_count_is_zero()
+    {
+        var runtimeMock = new ZeroPageFastReportRuntime();
+        var renderer = new FastReportReportRenderer(
+            new ReportDefinitionCache(),
+            new DeterministicReportDefinitionProvider(),
+            new DeterministicTemplateProvider(),
+            new EmptyReportDataProvider(),
+            new RenderConcurrencyGate(new RenderConcurrencyOptions { MaxConcurrentRenders = 1 }),
+            runtimeMock,
+            new DisabledWatermarkTextProvider(),
+            new InMemoryReportRenderTelemetry());
+
+        var request = new ReportRenderRequest("GUIDE_A4", new Dictionary<string, JsonElement>());
+
+        var ex = await Assert.ThrowsAsync<LegacyReportDatabaseException>(() => renderer.RenderPdfAsync(request, CancellationToken.None));
+        Assert.Equal(LegacyReportDatabaseErrorCode.ReportNotFound, ex.Code);
+        Assert.Contains("未查询到有效体检数据（生成页数为0）", ex.Message);
+    }
+
+    private sealed class ZeroPageFastReportRuntime : IFastReportRuntime
+    {
+        public Task<FastReportRuntimePreparation> PrepareAsync(FastReportRenderContext context, CancellationToken cancellationToken)
+            => Task.FromResult(new FastReportRuntimePreparation(new DummyPreparedDocument(), Array.Empty<ReportStageTiming>()));
+
+        public Task ApplyWatermarkAsync(IFastReportPreparedDocument prepared, WatermarkOptions watermark, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        public Task<FastReportPdfOutput> ExportPdfAsync(IFastReportPreparedDocument prepared, PdfExportProfile profile, CancellationToken cancellationToken)
+            => Task.FromResult(new FastReportPdfOutput(new byte[] { 1, 2, 3 }, 0));
+
+        private sealed class DummyPreparedDocument : IFastReportPreparedDocument
+        {
+            public int ExportedPageCount => 0;
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
 }

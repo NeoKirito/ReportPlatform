@@ -87,23 +87,32 @@ public sealed class AdoNetLegacyQueryParameterBinder : ILegacyQueryParameterBind
                 $"Report '{definition.ReportId}' has no SQL definition.");
 
         var source = BuildParameterIndex(request);
+        bool TryResolveParameterName(string name, out string matchedName)
+        {
+            if (source.ContainsKey(name)) { matchedName = name; return true; }
+            if (name.EndsWith("Arr", StringComparison.OrdinalIgnoreCase) && name.Length > 3 && source.ContainsKey(name[..^3])) { matchedName = name[..^3]; return true; }
+            if (source.ContainsKey(name + "Arr")) { matchedName = name + "Arr"; return true; }
+            matchedName = name;
+            return false;
+        }
+
         var bracketParameterNames = BracketParameterPattern.Matches(definition.SqlText)
             .Select(match => match.Groups["name"].Value)
-            .Where(source.ContainsKey)
+            .Where(name => TryResolveParameterName(name, out _))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var dollarBraceParameterNames = QuotedDollarBraceParameterPattern.Matches(definition.SqlText)
             .Select(match => match.Groups["name"].Value)
-            .Where(source.ContainsKey)
+            .Where(name => TryResolveParameterName(name, out _))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var commandText = QuotedDollarBraceParameterPattern.Replace(definition.SqlText, match =>
         {
             var name = match.Groups["name"].Value;
-            return source.ContainsKey(name) ? "@" + name : match.Value;
+            return TryResolveParameterName(name, out var resolved) ? "@" + resolved : match.Value;
         });
         commandText = BracketParameterPattern.Replace(commandText, match =>
         {
             var name = match.Groups["name"].Value;
-            return source.ContainsKey(name) ? "@" + name : match.Value;
+            return TryResolveParameterName(name, out var resolved) ? "@" + resolved : match.Value;
         });
 
         var parameters = new List<LegacyQueryParameter>();
@@ -152,8 +161,29 @@ public sealed class AdoNetLegacyQueryParameterBinder : ILegacyQueryParameterBind
         if (request.LegacyPayload is { ValueKind: JsonValueKind.Object } payload)
             IndexPayloadValues(payload, values);
 
+        NormalizePluralSingularVariants(values);
         AddHospitalAliases(values);
+        NormalizePluralSingularVariants(values);
         return values;
+    }
+
+    private static void NormalizePluralSingularVariants(Dictionary<string, JsonElement> values)
+    {
+        foreach (var (key, val) in values.ToArray())
+        {
+            if (key.EndsWith("Arr", StringComparison.OrdinalIgnoreCase) && key.Length > 3)
+            {
+                var singular = key[..^3];
+                if (!values.ContainsKey(singular))
+                    values[singular] = val.Clone();
+            }
+            else
+            {
+                var plural = key + "Arr";
+                if (!values.ContainsKey(plural))
+                    values[plural] = val.Clone();
+            }
+        }
     }
 
     private static void AddHospitalAliases(Dictionary<string, JsonElement> values)

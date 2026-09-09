@@ -57,7 +57,21 @@ internal static class ReportImagePreparation
                 || string.Equals((string?)s.Attribute("Alias"), path[0], StringComparison.OrdinalIgnoreCase));
             if (source is null) continue;
             var tableName = (string?)source.Attribute("ReferenceName") ?? (string?)source.Attribute("Name") ?? path[0];
-            if (!tables.TryGetValue(tableName, out var table) || !table.Columns.Contains(path[1])) continue;
+            DataTable? table = null;
+            if (tables.TryGetValue(tableName, out var direct) && direct.Columns.Contains(path[1]))
+            {
+                table = direct;
+            }
+            else if (tables.TryGetValue(path[0], out var alt) && alt.Columns.Contains(path[1]))
+            {
+                table = alt;
+            }
+            else
+            {
+                // Fallback: search any table in tables that contains this column
+                table = tables.Values.FirstOrDefault(t => t.Columns.Contains(path[1]));
+            }
+            if (table is null || !table.Columns.Contains(path[1])) continue;
             var column = table.Columns[path[1]]!;
             var columnUrls = table.Rows.Cast<DataRow>().Select(r => HttpUri(r[column])).OfType<Uri>().ToArray();
             if (columnUrls.Length == 0) continue;
@@ -71,7 +85,24 @@ internal static class ReportImagePreparation
             .Where(p => p.Uri is not null).ToArray();
         urls.UnionWith(locations.Select(p => p.Uri!));
         if (urls.Count == 0)
-            return new Result(template, new ImageResolveBatch(new Dictionary<string, ResolvedImage>(), 0, 0, 0, 0));
+        {
+            // Safety: strip any remaining external HTTP ImageLocations so FastReport won't make synchronous WebRequests
+            var hasExternalLocations = false;
+            foreach (var p in pictures)
+            {
+                var loc = (string?)p.Attribute("ImageLocation");
+                if (!string.IsNullOrWhiteSpace(loc) && (loc.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || loc.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+                {
+                    p.Attribute("ImageLocation")?.Remove();
+                    p.SetAttributeValue("Image", Convert.ToBase64String(_unavailableImage));
+                    hasExternalLocations = true;
+                }
+            }
+            return new Result(hasExternalLocations
+                ? "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" + document.ToString(SaveOptions.DisableFormatting)
+                : template,
+                new ImageResolveBatch(new Dictionary<string, ResolvedImage>(), 0, 0, 0, 0));
+        }
 
         var batch = await resolver.ResolveAsync(urls, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
@@ -100,6 +131,21 @@ internal static class ReportImagePreparation
             location.Picture.Attribute("ImageLocation")?.Remove();
             location.Picture.SetAttributeValue("Image", Convert.ToBase64String(Resolve(location.Uri!)));
         }
+
+        // Safety net: ensure no PictureObject retains an external HTTP ImageLocation
+        foreach (var p in pictures)
+        {
+            var loc = (string?)p.Attribute("ImageLocation");
+            if (!string.IsNullOrWhiteSpace(loc) && (loc.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || loc.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+            {
+                p.Attribute("ImageLocation")?.Remove();
+                if (p.Attribute("Image") is null)
+                {
+                    p.SetAttributeValue("Image", Convert.ToBase64String(HttpUri(loc) is { } uri ? Resolve(uri) : _unavailableImage));
+                }
+            }
+        }
+
         // LoadFromString distinguishes XML from Base64 by the XML declaration.
         return new Result("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" + document.ToString(SaveOptions.DisableFormatting), batch);
     }

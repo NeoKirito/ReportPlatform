@@ -17,6 +17,10 @@ namespace PEIS.Report.FastReport.OpenSource;
 /// </summary>
 public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = null) : IFastReportRuntime
 {
+    private static readonly IImageResolver _defaultResolver = new ImageResolver(
+        new HttpClient(),
+        new ImageResolutionOptions { TimeoutMilliseconds = 150, FailureCacheSeconds = 3600 });
+
     public static void WarmupCompiler() => Config.CompilerWarmup();
 
     internal static int ResolveImageDpi(PdfExportProfile profile)
@@ -37,11 +41,10 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
             var (normalizedTemplate, emptyDataPageNames) = LegacyFrxCompatibility.GetNormalizedWithEmptyPages(
                 context.Template.Content,
                 context.Data.Tables);
-            ReportImagePreparation.Result? images = null;
-            if (imageResolver is not null)
-                images = await ReportImagePreparation.PrepareAsync(normalizedTemplate, context.Data.Tables, imageResolver, cancellationToken).ConfigureAwait(false);
+            var effectiveResolver = imageResolver ?? _defaultResolver;
+            var images = await ReportImagePreparation.PrepareAsync(normalizedTemplate, context.Data.Tables, effectiveResolver, cancellationToken).ConfigureAwait(false);
             var frxLoad = Stopwatch.StartNew();
-            report.LoadFromString(images?.Template ?? normalizedTemplate);
+            report.LoadFromString(images.Template);
             frxLoad.Stop();
 
             var registerData = Stopwatch.StartNew();

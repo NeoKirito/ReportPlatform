@@ -355,6 +355,88 @@ public class UniversalPipelineLiveTests
     }
 
     [Fact]
+    public async Task Test_TianYao_HealthReport()
+    {
+        var dbOptions = Options.Create(new ReportDatabaseOptions
+        {
+            Provider = "SqlServer",
+            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            CommandTimeoutSeconds = 30
+        });
+
+        var schemaMapping = Options.Create(new LegacyReportSchemaMapping
+        {
+            DefinitionTable = "dbo.xt_bgdy_djwh_zzj",
+            ReportIdColumn = "djid",
+            ReportNameColumn = "djmc",
+            TemplateColumn = "dj_frx",
+            SqlColumn = "djsql",
+            TemplateContentEncoding = "Base64Utf8",
+            FirstResultSetTableName = "Master",
+            SupplementalQueryOrderColumn = "xh",
+            TemplateKeyPrefix = "legacy-djwh"
+        });
+
+        var resolver = new LegacyPayloadReportResolver();
+        var defProvider = new LegacyDatabaseReportDefinitionProvider(dbOptions, schemaMapping, TimeProvider.System, resolver);
+        var templateProvider = new LegacyDatabaseTemplateProvider();
+        var binder = new AdoNetLegacyQueryParameterBinder();
+        var dataProvider = new SqlServerReportDataProvider(dbOptions, binder);
+        var imageResolver = new ImageResolver(new HttpClient(), new ImageResolutionOptions { TimeoutMilliseconds = 150, MaxConcurrentFetches = 12, FailureCacheSeconds = 3600 });
+        var runtime = new OpenSourceFastReportRuntime(imageResolver);
+        var telemetry = new InMemoryReportRenderTelemetry();
+        using var watermark = new SqlServerWatermarkTextProvider(Options.Create(new WatermarkDatabaseOptions()), dbOptions);
+
+        var renderer = new FastReportReportRenderer(
+            new ReportDefinitionCache(),
+            defProvider,
+            templateProvider,
+            dataProvider,
+            new RenderConcurrencyGate(new RenderConcurrencyOptions { MaxConcurrentRenders = 4 }),
+            runtime,
+            watermark,
+            telemetry);
+
+        var payloadJson = """
+        {
+            "hospitalid": "1",
+            "tjryidArr": "B7B173A4126C46169A86E2F38EC34927",
+            "filename": "田耀        ",
+            "grtjgcjjgidArr": "E7B68873A60C471ABC9420F77E8246E3",
+            "url": "http://192.168.0.237:8081/jmreport/exportPdfStream",
+            "templateid": "828425886748311552"
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(payloadJson);
+        var parameters = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+        foreach (var prop in doc.RootElement.EnumerateObject())
+            parameters[prop.Name] = prop.Value.Clone();
+
+        var request = new ReportRenderRequest(
+            "828425886748311552",
+            parameters,
+            "legacy",
+            null,
+            "田耀        ",
+            doc.RootElement.Clone());
+
+        var swTotal = System.Diagnostics.Stopwatch.StartNew();
+        var result = await renderer.RenderPdfAsync(request, CancellationToken.None);
+        swTotal.Stop();
+
+        _output.WriteLine($"[TOTAL RENDER TIME] {swTotal.ElapsedMilliseconds} ms (Pages: {result.PageCount}, Bytes: {result.Pdf.Length})");
+        foreach (var t in result.Timings)
+        {
+            _output.WriteLine($"  [TIMING] {t.Stage}: {t.ElapsedMilliseconds} ms");
+        }
+
+        Assert.NotNull(result);
+        Assert.True(result.PageCount > 0);
+        Assert.NotEmpty(result.Pdf);
+    }
+
+    [Fact]
     public async Task Test_Tjdj_GroupBillingReport()
     {
         var dbOptions = Options.Create(new ReportDatabaseOptions
@@ -448,7 +530,14 @@ public class UniversalPipelineLiveTests
 
 
 
+        var swTotal = System.Diagnostics.Stopwatch.StartNew();
         var result = await renderer.RenderPdfAsync(request, CancellationToken.None);
+        swTotal.Stop();
+        _output.WriteLine($"[TOTAL RENDER TIME] {swTotal.ElapsedMilliseconds} ms");
+        foreach (var t in result.Timings)
+        {
+            _output.WriteLine($"  [TIMING] {t.Stage}: {t.ElapsedMilliseconds} ms");
+        }
         Assert.NotNull(result);
         Assert.True(result.PageCount > 0);
         Assert.NotEmpty(result.Pdf);

@@ -196,6 +196,33 @@ public sealed class LegacyDatabaseContractsTests
         Assert.Equal(LegacyReportDatabaseErrorCode.ParameterBindFailed, exception.Code);
     }
 
+    [Fact]
+    public void Binder_resolves_plural_Arr_query_parameter_to_singular_bracket_and_dollar_brace_placeholders()
+    {
+        using var jsonDoc = JsonDocument.Parse("{\"grtjgcjjgidArr\":\"A56843F41C874041A2F510B1DCE65379\",\"dwtjgcjjgidArr\":\"DWTJ-999\"}");
+        var request = new ReportRenderRequest(
+            "tjdjd",
+            new Dictionary<string, JsonElement>
+            {
+                ["grtjgcjjgidArr"] = jsonDoc.RootElement.GetProperty("grtjgcjjgidArr").Clone(),
+                ["dwtjgcjjgidArr"] = jsonDoc.RootElement.GetProperty("dwtjgcjjgidArr").Clone()
+            });
+        var ignored = 0;
+        var definition = CreateDefinition("1", ref ignored) with
+        {
+            SqlText = "select * from pe_grtjgcjjg where grtjgcjjgid=[grtjgcjjgid] and dwtjgcjjgid='${dwtjgcjjgid}'"
+        };
+
+        var binding = new AdoNetLegacyQueryParameterBinder().Bind(definition, request);
+
+        Assert.Equal("select * from pe_grtjgcjjg where grtjgcjjgid=@grtjgcjjgid and dwtjgcjjgid=@dwtjgcjjgid", binding.CommandText);
+        Assert.Equal(2, binding.Parameters.Count);
+        var p1 = binding.Parameters.First(p => p.Name == "grtjgcjjgid");
+        Assert.Equal("A56843F41C874041A2F510B1DCE65379", p1.Value);
+        var p2 = binding.Parameters.First(p => p.Name == "dwtjgcjjgid");
+        Assert.Equal("DWTJ-999", p2.Value);
+    }
+
     private static ReportDefinition CreateDefinition(string version, ref int calls)
     {
         calls++;

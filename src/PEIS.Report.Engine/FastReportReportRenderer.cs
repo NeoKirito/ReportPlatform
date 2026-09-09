@@ -105,6 +105,13 @@ public sealed class FastReportReportRenderer(
             output = await metrics.MeasureAsync("PdfExport", () => runtime.ExportPdfAsync(prepared, profile, cancellationToken));
         }
 
+        if (output.PageCount <= 0)
+        {
+            throw new LegacyReportDatabaseException(
+                LegacyReportDatabaseErrorCode.ReportNotFound,
+                $"报表 '{request.FileName ?? definition.ReportId}' 未查询到有效体检数据（生成页数为0）。请核对体检人/单位标识参数及对应数据库记录。");
+        }
+
         metrics.Pages = output.PageCount;
         metrics.PdfBytes = output.Pdf.LongLength;
         await metrics.MeasureAsync("ArtifactWrite", () => Task.CompletedTask);
