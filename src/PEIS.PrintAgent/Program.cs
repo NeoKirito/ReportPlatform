@@ -1,11 +1,19 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using PEIS.PrintAgent;
 using PEIS.PrintAgent.Printing;
 using PEIS.PrintAgent.Services;
 using PEIS.PrintAgent.Previewing;
+using PEIS.Report.Contracts.Logging;
 
 var builder = Host.CreateApplicationBuilder(args);
+builder.Logging.AddRollingFile(options =>
+{
+    options.FilePrefix = "agent";
+    options.LogDirectory = "logs";
+    options.RetentionDays = 30;
+});
 var simpleConfigPath = Path.Combine(AppContext.BaseDirectory, "agent.ini");
 if (File.Exists(simpleConfigPath))
 {

@@ -10,8 +10,16 @@ using PEIS.Report.Docx.OpenXml;
 using PEIS.Report.Engine;
 
 using PEIS.Report.FastReport.OpenSource;
+using PEIS.Report.Contracts.Logging;
+using PEIS.Report.Api.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddRollingFile(options =>
+{
+    options.FilePrefix = "api";
+    options.LogDirectory = "logs";
+    options.RetentionDays = 30;
+});
 
 // Auto-discover config.ini from current dir, parent dir, or app base
 var candidateIniPaths = new[]
@@ -160,9 +168,11 @@ builder.Services.AddSingleton<PrintJobCoordinator>();
 
 builder.Services.AddSingleton<BusinessPrintCoordinator>();
 builder.Services.AddSingleton<ReportDeliveryCoordinator>();
-builder.Services.AddHostedService<ReportDefinitionWarmupService>();
+builder.Services.AddSingleton<ReportDefinitionWarmupService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ReportDefinitionWarmupService>());
 
 var app = builder.Build();
+app.UseMiddleware<ReportOperationLoggingMiddleware>();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapControllers();
@@ -183,6 +193,19 @@ app.MapPost("/internal/cache/reports/{reportId}/invalidate", (string reportId, R
 {
     var removed = definitions.InvalidateReport(reportId);
     return Results.Ok(new { reportId, removed });
+});
+
+app.MapPost("/internal/cache/reload", async (ReportDefinitionWarmupService warmup, CancellationToken ct) =>
+{
+    var (total, success, failed, newReports) = await warmup.ReloadCatalogAsync(ct);
+    return Results.Ok(new
+    {
+        status = "ok",
+        scanned = total,
+        success,
+        failed,
+        newlyCached = newReports
+    });
 });
 
 // New typed endpoint retained for diagnostics/new integrations only. Existing PEIS callers

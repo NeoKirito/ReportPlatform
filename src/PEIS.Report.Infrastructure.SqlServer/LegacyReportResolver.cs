@@ -32,7 +32,21 @@ public sealed class LegacyPayloadReportResolver : ILegacyReportResolver
     {
         ["724071198644850688"] = "jktjbbd",
         ["773424455578746880"] = "tjsfd",
-        ["837103946955685888"] = "tjsfd"
+        ["837103946955685888"] = "tjsfd",
+        ["837209944550735872"] = "zytjbbd",
+        ["729498909698621440"] = "tjdj",
+        ["720128756003573760"] = "tjdjd",
+        ["720128756003573761"] = "tjzydjd",
+        ["720128756003573788"] = "dwzytjbgd",
+        ["730268903554351104"] = "xdwtjbgd",
+        ["828425886748311552"] = "jktjbbd",
+        ["828425886748311555"] = "xmtm",
+        ["828425886748311558"] = "jzkdypz",
+        ["828425886748312345"] = "tjwts",
+        ["828425886748344444"] = "ksfdj",
+        ["828425886748354321"] = "tjzjwjxmdj",
+        ["828425886748366666"] = "tjjkz",
+        ["828425886748377777"] = "zyjjzgzs"
     };
 
     public LegacyReportResolution Resolve(ReportRenderRequest request)

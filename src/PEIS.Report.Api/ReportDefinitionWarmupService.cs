@@ -105,6 +105,33 @@ public sealed class ReportDefinitionWarmupService(
 
             logger.LogInformation("报表预热完成: 总计检测 {Total} 个报表，成功缓存 {Success} 个，跳过异常报表 {Failed} 个。服务已就绪。",
                 candidateReportIds.Count, successCount, failedCount);
+
+            // Periodic background poll to auto-discover any new reports added while service is running
+            var refreshMinutes = configuration.GetValue<int>("ReportEngine:CatalogRefreshMinutes", 15);
+            if (refreshMinutes > 0)
+            {
+                while (!stoppingToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromMinutes(refreshMinutes), stoppingToken).ConfigureAwait(false);
+                        var result = await ReloadCatalogAsync(stoppingToken).ConfigureAwait(false);
+                        if (result.NewReportIds.Count > 0)
+                        {
+                            logger.LogInformation("后台增量巡检: 发现并自动预热了 {Count} 个新增报表: {Reports}",
+                                result.NewReportIds.Count, string.Join(", ", result.NewReportIds));
+                        }
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "后台定时增量报表扫描发生异常，不影响常规请求");
+                    }
+                }
+            }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -114,5 +141,60 @@ public sealed class ReportDefinitionWarmupService(
         {
             logger.LogError(ex, "后台全量报表预热任务执行异常，常规请求仍可正常按需加载。");
         }
+    }
+
+    /// <summary>
+    /// Hot-reloads the report catalog dynamically from the database while the service is running.
+    /// Can be called manually via HTTP endpoint or scheduled in the background.
+    /// </summary>
+    public async Task<(int Total, int Success, int Failed, IReadOnlyList<string> NewReportIds)> ReloadCatalogAsync(CancellationToken cancellationToken)
+    {
+        var catalogProvider = catalog ?? (definitions as IReportCatalogProvider);
+        if (catalogProvider == null)
+        {
+            return (0, 0, 0, Array.Empty<string>());
+        }
+
+        var candidateReportIds = await catalogProvider.ListReportIdsAsync(cancellationToken).ConfigureAwait(false);
+        int successCount = 0;
+        int failedCount = 0;
+        var newReports = new List<string>();
+
+        foreach (var reportId in candidateReportIds)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+
+            try
+            {
+                var request = new ReportRenderRequest(reportId.Trim(), new Dictionary<string, System.Text.Json.JsonElement>());
+                var cacheKey = request.ReportId;
+                if (definitions is IReportDefinitionVersionProvider versions)
+                {
+                    var version = await versions.GetVersionAsync(request, cancellationToken).ConfigureAwait(false);
+                    cacheKey = ReportDefinitionCache.BuildCacheKey(request.ReportId, version);
+                }
+
+                var beforeCount = cache.Snapshot().EntryCount;
+                var definition = await cache.GetOrCreateAsync(cacheKey, token => definitions.GetRequiredAsync(request, token), cancellationToken).ConfigureAwait(false);
+                if (templates != null)
+                {
+                    await templates.GetRequiredAsync(definition, cancellationToken).ConfigureAwait(false);
+                }
+
+                successCount++;
+                if (cache.Snapshot().EntryCount > beforeCount)
+                {
+                    newReports.Add(reportId);
+                    logger.LogInformation("  [新报表已热加载入缓存] {ReportId}", reportId);
+                }
+            }
+            catch (Exception ex)
+            {
+                failedCount++;
+                logger.LogWarning("  [热加载跳过异常报表] {ReportId}: {Message}", reportId, ex.Message);
+            }
+        }
+
+        return (candidateReportIds.Count, successCount, failedCount, newReports);
     }
 }
