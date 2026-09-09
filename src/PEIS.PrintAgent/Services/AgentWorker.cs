@@ -26,6 +26,7 @@ public sealed class AgentWorker(
             cfg.StationId = Environment.MachineName;
         Directory.CreateDirectory(cfg.WorkDirectory);
         CleanupOldArtifacts(cfg.WorkDirectory);
+        logger.LogInformation("Agent initialized. StationId: {StationId}, ServerUrl: {ServerUrl}", cfg.StationId, cfg.ServerUrl);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -46,8 +47,30 @@ public sealed class AgentWorker(
 
     private async Task RunConnectionAsync(AgentOptions cfg, CancellationToken token)
     {
+        var hubUrl = $"{cfg.ServerUrl.TrimEnd('/')}/hubs/print-agent";
+        logger.LogInformation("Connecting to SignalR hub at {Url}...", hubUrl);
         var connection = new HubConnectionBuilder()
-            .WithUrl($"{cfg.ServerUrl.TrimEnd('/')}/hubs/print-agent")
+            .WithUrl(hubUrl, httpOptions =>
+            {
+                httpOptions.HttpMessageHandlerFactory = handler =>
+                {
+                    if (handler is HttpClientHandler clientHandler)
+                    {
+                        clientHandler.UseProxy = false;
+                        clientHandler.Proxy = null;
+                    }
+                    else if (handler is SocketsHttpHandler socketsHandler)
+                    {
+                        socketsHandler.UseProxy = false;
+                        socketsHandler.Proxy = null;
+                    }
+                    return handler;
+                };
+                httpOptions.WebSocketConfiguration = ws =>
+                {
+                    ws.Proxy = new System.Net.WebProxy();
+                };
+            })
             .WithAutomaticReconnect()
             .Build();
 

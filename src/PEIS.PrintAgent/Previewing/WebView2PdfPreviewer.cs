@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Web.WebView2.WinForms;
+using System.Diagnostics;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace PEIS.PrintAgent.Previewing;
@@ -15,6 +17,8 @@ public sealed class WebView2PdfPreviewer(
     IOptions<AgentOptions> options,
     ILogger<WebView2PdfPreviewer> logger) : IPdfPreviewer
 {
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
     public Task OpenAsync(PdfPreviewRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -56,7 +60,9 @@ public sealed class WebView2PdfPreviewer(
             Width = Math.Clamp(preview.WindowWidth, 700, 2400),
             Height = Math.Clamp(preview.WindowHeight, 500, 1600),
             StartPosition = FormStartPosition.CenterScreen,
-            MinimumSize = new Size(700, 500)
+            MinimumSize = new Size(700, 500),
+            TopMost = true,
+            ShowInTaskbar = true
         };
 
         var toolbar = new FlowLayoutPanel
@@ -130,17 +136,64 @@ public sealed class WebView2PdfPreviewer(
         {
             try
             {
-                await webView.EnsureCoreWebView2Async();
-                webView.Source = new Uri(Path.GetFullPath(request.PdfPath));
-                status.Text = Path.GetFileName(request.PdfPath);
-                opened.TrySetResult();
+                form.Activate();
+                form.BringToFront();
+                SetForegroundWindow(form.Handle);
+
+                _ = Task.Delay(2000).ContinueWith(_ =>
+                {
+                    try
+                    {
+                        if (!form.IsDisposed && form.IsHandleCreated)
+                        {
+                            form.BeginInvoke(new Action(() => form.TopMost = false));
+                        }
+                    }
+                    catch { }
+                });
+
+                if (!webView.IsHandleCreated)
+                {
+                    webView.CreateControl();
+                }
+
+                try
+                {
+                    var userDataFolder = Path.Combine(Path.GetTempPath(), "PEIS.PrintAgent", "WebView2Data");
+                    Directory.CreateDirectory(userDataFolder);
+                    var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
+                    await webView.EnsureCoreWebView2Async(env);
+                    webView.Source = new Uri(Path.GetFullPath(request.PdfPath));
+                    status.Text = Path.GetFileName(request.PdfPath);
+                    opened.TrySetResult();
+                }
+                catch (Exception webViewEx)
+                {
+                    logger.LogWarning(webViewEx, "Embedded WebView2 initialization failed for {PdfPath}; falling back to system default viewer.", request.PdfPath);
+                    try
+                    {
+                        status.Text = $"已调起系统预览：{Path.GetFileName(request.PdfPath)}";
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = Path.GetFullPath(request.PdfPath),
+                            UseShellExecute = true
+                        });
+                        opened.TrySetResult();
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        status.Text = "PDF 预览组件启动失败";
+                        logger.LogError(fallbackEx, "Fallback system viewer also failed for {PdfPath}", request.PdfPath);
+                        opened.TrySetException(new InvalidOperationException(
+                            "无法启动 PDF 预览，请检查系统 PDF 关联程序或 Edge 运行库。", webViewEx));
+                    }
+                }
             }
             catch (Exception ex)
             {
-                status.Text = "PDF 预览组件启动失败";
-                logger.LogError(ex, "WebView2 failed to open PDF {PdfPath}", request.PdfPath);
-                opened.TrySetException(new InvalidOperationException(
-                    "无法启动 WebView2 PDF 预览，请安装 Microsoft Edge WebView2 Runtime。", ex));
+                status.Text = "PDF 预览窗口异常";
+                logger.LogError(ex, "Form_Shown uncaught error for {PdfPath}", request.PdfPath);
+                opened.TrySetException(ex);
             }
         };
         form.FormClosed += (_, _) => webView.Dispose();

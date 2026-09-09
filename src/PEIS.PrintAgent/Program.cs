@@ -7,6 +7,9 @@ using PEIS.PrintAgent.Services;
 using PEIS.PrintAgent.Previewing;
 using PEIS.Report.Contracts.Logging;
 
+System.Net.WebRequest.DefaultWebProxy = new System.Net.WebProxy();
+System.Net.Http.HttpClient.DefaultProxy = new System.Net.WebProxy();
+
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddRollingFile(options =>
 {
@@ -61,7 +64,12 @@ if (!string.IsNullOrEmpty(simpleConfigPath) && File.Exists(simpleConfigPath))
     }
 }
 builder.Services.Configure<AgentOptions>(builder.Configuration.GetSection("Agent"));
-builder.Services.AddHttpClient("report-api");
+builder.Services.AddHttpClient("report-api")
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        UseProxy = false,
+        Proxy = null
+    });
 builder.Services.AddSingleton<AgentIdentityStore>();
 builder.Services.AddSingleton<PrinterCatalog>();
 builder.Services.AddSingleton<PrinterSelectionStore>();
