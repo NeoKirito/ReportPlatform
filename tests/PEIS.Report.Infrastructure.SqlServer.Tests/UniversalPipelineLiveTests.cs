@@ -353,4 +353,107 @@ public class UniversalPipelineLiveTests
         Assert.NotEmpty(result.Pdf);
         Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(result.Pdf.AsSpan(0, Math.Min(5, result.Pdf.Length))));
     }
+
+    [Fact]
+    public async Task Test_Tjdj_GroupBillingReport()
+    {
+        var dbOptions = Options.Create(new ReportDatabaseOptions
+        {
+            Provider = "SqlServer",
+            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            CommandTimeoutSeconds = 30
+        });
+
+        var schemaMapping = Options.Create(new LegacyReportSchemaMapping
+        {
+            DefinitionTable = "dbo.xt_bgdy_djwh_zzj",
+            ReportIdColumn = "djid",
+            ReportNameColumn = "djmc",
+            TemplateColumn = "dj_frx",
+            SqlColumn = "djsql",
+            TemplateContentEncoding = "Base64Utf8",
+            FirstResultSetTableName = "Master",
+            SupplementalQueryOrderColumn = "xh",
+            TemplateKeyPrefix = "legacy-djwh"
+        });
+
+        var resolver = new LegacyPayloadReportResolver();
+        var defProvider = new LegacyDatabaseReportDefinitionProvider(dbOptions, schemaMapping, TimeProvider.System, resolver);
+        var templateProvider = new LegacyDatabaseTemplateProvider();
+        var binder = new AdoNetLegacyQueryParameterBinder();
+        var dataProvider = new SqlServerReportDataProvider(dbOptions, binder);
+        var runtime = new OpenSourceFastReportRuntime();
+        var telemetry = new InMemoryReportRenderTelemetry();
+        using var watermark = new SqlServerWatermarkTextProvider(Options.Create(new WatermarkDatabaseOptions()), dbOptions);
+
+        var renderer = new FastReportReportRenderer(
+            new ReportDefinitionCache(),
+            defProvider,
+            templateProvider,
+            dataProvider,
+            new RenderConcurrencyGate(new RenderConcurrencyOptions { MaxConcurrentRenders = 4 }),
+            runtime,
+            watermark,
+            telemetry);
+
+        var rawJson = """
+        {
+            "pageNo": 1,
+            "pageSize": 100,
+            "djh": {
+                "grtjgcjjgid": "",
+                "dwtjgcjjgid": "ABFBCB023B6E4E5689495BAF24AE4681"
+            },
+            "yhmc": "",
+            "bbid": "tjdj",
+            "fileName": "团检单据",
+            "querytype": "djwh"
+        }
+        """;
+        using var doc = JsonDocument.Parse(rawJson);
+        var request = new ReportRenderRequest(
+            "tjdj",
+            new Dictionary<string, JsonElement>
+            {
+                ["bbid"] = doc.RootElement.GetProperty("bbid").Clone(),
+                ["dwtjgcjjgid"] = doc.RootElement.GetProperty("djh").GetProperty("dwtjgcjjgid").Clone()
+            },
+            "legacy",
+            null,
+            "团检单据",
+            doc.RootElement.Clone());
+
+        // 1. Definition
+        var definition = await defProvider.GetRequiredAsync(request, CancellationToken.None);
+        _output.WriteLine($"[DEF] ReportId: {definition.ReportId}, Supplemental queries count: {definition.SupplementalQueries?.Count}");
+        if (definition.SupplementalQueries != null)
+        {
+            foreach (var sq in definition.SupplementalQueries)
+            {
+                _output.WriteLine($"  Supplemental query: TableName={sq.TableName}, SubReportId={sq.SubReportId}");
+            }
+        }
+
+        // 2. Data
+        var data = await dataProvider.QueryAsync(definition, request, CancellationToken.None);
+        _output.WriteLine($"[DATA] Total tables: {data.Tables.Count}");
+        foreach (var kvp in data.Tables)
+        {
+            _output.WriteLine($"  Table '{kvp.Key}': {kvp.Value.Rows.Count} rows, cols: [{string.Join(", ", kvp.Value.Columns.Cast<System.Data.DataColumn>().Select(c => c.ColumnName))}]");
+        }
+
+
+
+
+
+
+
+        var result = await renderer.RenderPdfAsync(request, CancellationToken.None);
+        Assert.NotNull(result);
+        Assert.True(result.PageCount > 0);
+        Assert.NotEmpty(result.Pdf);
+        Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(result.Pdf.AsSpan(0, Math.Min(5, result.Pdf.Length))));
+        _output.WriteLine($"[PASS] tjdj PDF generated: {result.PageCount} pages, {result.Pdf.Length} bytes");
+    }
 }
+

@@ -110,11 +110,14 @@ public sealed class SqlServerReportDataProvider : IReportDataProvider
                     dataSet.Tables.Add(table);
 
                     // Universal aliases registration:
+                    var isDummyMainQuery = definition.SqlText != null &&
+                        definition.SqlText.Trim().StartsWith("select '1' as a", StringComparison.OrdinalIgnoreCase);
+
                     if (queryIndex == 0 && queryResultSet == 0)
                     {
                         tables["Master"] = table;
                         tables[definition.ReportId] = table;
-                        if (!tables.ContainsKey("Master1"))
+                        if (!isDummyMainQuery && !tables.ContainsKey("Master1"))
                             tables["Master1"] = table;
                     }
                     else if (queryIndex > 0 && queryResultSet == 0)
@@ -122,14 +125,18 @@ public sealed class SqlServerReportDataProvider : IReportDataProvider
                         if (!string.IsNullOrWhiteSpace(query.SubReportId))
                             tables[query.SubReportId] = table;
 
-                        // 1-based index (e.g. jktjbbd: sub-query 1 -> Master1)
-                        var index1 = $"Master{queryIndex}";
-                        tables[index1] = table;
-
-                        // 2-based index (e.g. tjdj: sub-query 1 -> Master2)
-                        var index2 = $"Master{queryIndex + 1}";
-                        if (!tables.ContainsKey(index2))
-                            tables[index2] = table;
+                        if (isDummyMainQuery)
+                        {
+                            // 2-based index when main query was a dummy placeholder (e.g. tjdj: subquery 1 -> Master2)
+                            var alias = $"Master{queryIndex + 1}";
+                            tables[alias] = table;
+                        }
+                        else
+                        {
+                            // 1-based index when main query contains real primary data (e.g. jktjbbd: subquery 1 -> Master1)
+                            var alias = $"Master{queryIndex}";
+                            tables[alias] = table;
+                        }
                     }
 
                     resultSet++;

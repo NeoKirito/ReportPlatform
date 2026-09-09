@@ -73,8 +73,14 @@ public sealed class ReportsController(
         }
         catch (Exception ex)
         {
-            logger?.LogError(ex, "Unexpected error generating report: {Message}", ex.Message);
-            return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
+            var root = ex.GetBaseException() ?? ex;
+            var errorMsg = root.Message;
+            if (root != ex && !string.IsNullOrWhiteSpace(ex.Message))
+            {
+                errorMsg = $"{ex.Message} -> {root.Message}";
+            }
+            logger?.LogError(ex, "Unexpected error generating report: {Message}", errorMsg);
+            return StatusCode(StatusCodes.Status500InternalServerError, new { error = errorMsg, details = ex.ToString() });
         }
     }
 

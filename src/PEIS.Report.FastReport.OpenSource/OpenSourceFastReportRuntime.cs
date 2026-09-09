@@ -45,14 +45,6 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
             frxLoad.Stop();
 
             var registerData = Stopwatch.StartNew();
-            foreach (var table in context.Data.Tables)
-            {
-                // The real xmtm FRX is bound to Master. Preserve database-owned names instead of adding aliases.
-                report.RegisterData(table.Value, table.Key);
-                var source = report.GetDataSource(table.Key);
-                if (source is not null)
-                    source.Enabled = true;
-            }
             EnsureDataSourcesAndSchemas(report, context.Data.Tables);
             ApplyParameters(report, context.Request);
             registerData.Stop();
@@ -218,44 +210,45 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
         FastReportReport report,
         IReadOnlyDictionary<string, DataTable> tables)
     {
+        var registeredNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (Base b in report.Dictionary.DataSources)
         {
             if (b is not TableDataSource tds)
                 continue;
 
             var refName = tds.ReferenceName ?? tds.Name;
+            var declaredCols = tds.Columns.Cast<Column>().Select(c => c.Name).ToList();
             DataTable? table = null;
 
-            // 1. Direct match by ReferenceName, Name, or Alias
-            if (!tables.TryGetValue(refName, out table) &&
-                !tables.TryGetValue(tds.Name, out table) &&
-                (string.IsNullOrWhiteSpace(tds.Alias) || !tables.TryGetValue(tds.Alias, out table)))
+            // 1. Direct match by ReferenceName, Name, or Alias - but verify column compatibility if declared columns exist
+            if (tables.TryGetValue(refName, out var candidate) ||
+                tables.TryGetValue(tds.Name, out candidate) ||
+                (!string.IsNullOrWhiteSpace(tds.Alias) && tables.TryGetValue(tds.Alias, out candidate)))
             {
-                // 2. Intelligent column overlap match against available tables
-                if (tds.Columns.Count > 0)
+                if (declaredCols.Count == 0 || declaredCols.Any(c => candidate.Columns.Contains(c)))
                 {
-                    var bestOverlap = 0;
-                    DataTable? bestTable = null;
-                    foreach (var candidate in tables.Values)
+                    table = candidate;
+                }
+            }
+
+            // 2. Intelligent column overlap match against all available tables
+            if (table is null && declaredCols.Count > 0)
+            {
+                var bestOverlap = 0;
+                DataTable? bestTable = null;
+                foreach (var cand in tables.Values.Distinct())
+                {
+                    var overlap = declaredCols.Count(c => cand.Columns.Contains(c));
+                    if (overlap > bestOverlap)
                     {
-                        var overlap = 0;
-                        foreach (Column col in tds.Columns)
-                        {
-                            if (candidate.Columns.Contains(col.Name))
-                                overlap++;
-                        }
-                        if (overlap > bestOverlap && overlap >= Math.Min(2, tds.Columns.Count))
-                        {
-                            bestOverlap = overlap;
-                            bestTable = candidate;
-                        }
+                        bestOverlap = overlap;
+                        bestTable = cand;
                     }
-                    if (bestTable is not null)
-                    {
-                        table = bestTable;
-                        report.RegisterData(table, refName);
-                        tds.Enabled = true;
-                    }
+                }
+                if (bestTable is not null && bestOverlap > 0)
+                {
+                    table = bestTable;
                 }
             }
 
@@ -267,20 +260,39 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
                 {
                     table.Columns.Add(col.Name, col.DataType ?? typeof(string));
                 }
-                report.RegisterData(table, refName);
-                tds.Enabled = true;
             }
             else
             {
                 // 4. Ensure all declared schema columns exist in the table so Roslyn compiles without errors
-                foreach (Column col in tds.Columns)
+                foreach (var colName in declaredCols)
                 {
-                    if (!table.Columns.Contains(col.Name))
+                    if (!table.Columns.Contains(colName))
                     {
-                        table.Columns.Add(col.Name, col.DataType ?? typeof(string));
+                        table.Columns.Add(colName, typeof(string));
                     }
                 }
-                tds.Enabled = true;
+            }
+
+            report.RegisterData(table, tds.Name);
+            registeredNames.Add(tds.Name);
+            if (!string.IsNullOrEmpty(tds.ReferenceName) && !tds.ReferenceName.Equals(tds.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                report.RegisterData(table, tds.ReferenceName);
+                registeredNames.Add(tds.ReferenceName);
+            }
+            tds.Table = table;
+            tds.Enabled = true;
+        }
+
+        // Register any remaining tables from data provider that weren't in the template dictionary
+        foreach (var (key, tbl) in tables)
+        {
+            if (!registeredNames.Contains(key))
+            {
+                report.RegisterData(tbl, key);
+                var source = report.GetDataSource(key);
+                if (source is not null)
+                    source.Enabled = true;
             }
         }
     }
