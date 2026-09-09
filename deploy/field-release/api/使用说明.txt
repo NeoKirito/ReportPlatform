@@ -1,0 +1,62 @@
+PEIS 报表服务 — Windows x64 便携包
+
+一、开始使用
+1. 将 ZIP 完整解压到固定目录，不要直接在压缩包里运行。
+2. 双击“修改配置.cmd”，填写 config.ini 的 ConnectionString。
+   Port 默认 82，可按需要修改；不需要配置其他业务选项。
+3. 双击“启动服务.cmd”。出现 Service started 表示 HTTP 服务已经启动。
+   服务在后台运行，关闭提示窗口不会关闭服务。
+4. 需要停止时双击“关闭服务.cmd”；“查看状态.cmd”可查看运行状态。
+5. 修改配置后，先关闭服务，再重新启动。不需要重启电脑。
+
+二、接口
+POST http://服务器IP:端口/BaseInfo/Report/GetReportByJson
+Content-Type: application/json
+请求体：沿用原系统已有的完整 JSON；成功返回 application/pdf 文件。
+也保留 POST /api/Reports/GetReportByJson。
+
+桌面预览/打印交付：POST /api/report-deliveries。stationId 可以不传，服务会按浏览器来源 IP 自动匹配同一台电脑上的 Agent；GET /api/report-deliveries/stations 可查看自动匹配结果和在线工作站。
+
+部署在 192.168.0.237 且 Port=82 时，接口地址就是：
+http://192.168.0.237:82/BaseInfo/Report/GetReportByJson
+本包不是转发到该地址的代理；它在当前机器独立提供报表接口。
+地址中的 IP 是部署机器的 IP，本包不会修改机器 IP。
+浏览器直接打开报表地址是 GET 请求，会返回 405，这是正常的；请用原业务的 POST JSON 调用。
+检查服务是否启动可访问 http://127.0.0.1:82/health（端口以配置为准）。
+health 只检查 HTTP 服务存活，不代表数据库连接或某张报表已经验证成功。
+
+三、数据库与默认值
+不附带任何真实数据库密码、患者数据或本地测试报表。
+ConnectionString 必须指向已有的 SQL Server 报表数据库；不会创建或迁移数据库。
+默认直接使用 LegacySqlServer + FastReportOpenSource，不使用演示/Stub 渲染器。
+默认报表定义表 dbo.xt_bgdy_djwh_zzj，键 djid，模板列 dj_frx（Base64 UTF-8），SQL 列 djsql。
+默认首个结果集名称 Master；以“报表ID_”为前缀的子查询按 xh、djid 排序，依次加载为 Master1、Master2 等。
+请求沿用已有 querytype=djwh、bbid 等字段，无需额外配置多数据表报表。
+报表定义按版本写入 .runtime/definition-cache，并在启动后预热 jktjbbd。数据库未提供版本列时默认缓存一小时；编辑模板后可调用 POST /internal/cache/reports/报表ID/invalidate 立即失效。
+水印查询默认复用同一个数据库连接；请求参数和数据库模板决定实际报表内容。
+这些默认值适用于本项目已支持的数据库结构；其他结构或未验证的旧报表需要另行适配。
+
+四、运行环境和注意事项
+包含 .NET 10 Windows x64 运行时，无需安装 SDK、.NET 或 IIS。
+面向 Windows 10/11 x64、Windows Server 2019/2022/2025 等适配 .NET 10 的系统。
+本包只启动报表 API，不安装 Windows Service、不设置开机自启、不安装打印代理。
+当前用户退出登录或系统重启后，需要重新双击启动。
+不要直接双击 app 目录内的 EXE；只有根目录启动脚本会读取 config.ini。
+运行账号需要有解压目录的读写权限，建议启动和关闭使用同一 Windows 账号。
+停止操作会终止本目录的报表进程，正在生成的报表会中断，请在空闲时关闭。
+可重复启动/关闭；不同解压目录下的服务互不停止（必须使用不同端口）。
+
+如果 82 端口已经被 IIS 或旧服务占用，本包会报错且不会自动关闭旧服务。
+请自行停用旧服务后切换，或先在另一个端口验证；本包不会改动 IIS、防火墙或其他进程。
+其他电脑访问需要部署机器网络可达，并由管理员允许相应 TCP 入站端口。
+仅供受信任内网使用：当前 API 未配置用户鉴权，不能直接暴露到公网。
+数据库建议使用最小权限账号；config.ini 含密码，请限制文件访问，不要上传或转发填写后的包。
+首次正式使用请用一份现有业务 JSON 验证 PDF 内容、字体、分页、条码及水印。
+缺少报表所用字体时，应在服务器安装相应合法字体。
+错误和运行日志位于 logs 目录；日志可能含业务信息，分享前请脱敏。
+
+五、外部图片不可达时
+报表引用的 HTTP/HTTPS 图片会按 3 秒超时并发下载、去重；失败地址短期缓存 5 分钟，避免每次报告都重复等待坏地址。
+无法下载的图片位置显示 IMAGE UNAVAILABLE，响应头 X-ReportPlatform-Unavailable-Images 表示失败的图片地址数量。
+这类 PDF 可查看文字内容，但不是图片完整的正式报告；请恢复图片服务网络后重新生成并核对。
+不会修改数据库中的图片地址或原始报表模板。

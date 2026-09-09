@@ -2,12 +2,14 @@
 
 这是 Windows x64 自包含发布包；报表服务器不需要另行安装 .NET SDK 或 .NET Runtime。请先解压到固定目录，再按下表完成配置与启动。
 
-| 步骤 | 操作 |
-|---|---|
-| 1 | 打开 `01-报表服务API\appsettings.Production.json`，只填写 `ReportDatabase.ConnectionString`。维护库与报表库不同时，再填写 `WatermarkDatabase.ConnectionString`；相同时保持为空。连接账号仅授予所需的 `SELECT` 权限。 |
-| 2 | 双击 `01-报表服务API\启动报表服务.cmd`。浏览器访问 `http://服务IP:5080/health`；显示 `ok` 即服务已启动。 |
-| 3 | 在每台打印工作站打开 `02-静默打印代理\appsettings.Production.json`，填写服务地址和实际 Windows 打印机名称。首次安装请保留 `PrintBackend.Mode=DryRun`，确认 PDF 流程后再由现场人员配置真实打印程序。 |
-| 4 | 双击 `02-静默打印代理\启动静默打印代理.cmd`。 |
+| 步骤 | 模块 | 操作 |
+|---|---|---|
+| 1 | 01-ReportApi 报表服务 | 双击 `修改配置.cmd`（编辑根目录 `config.ini`），填写 `Port`（端口）与 `ConnectionString`（数据库连接）。 |
+| 2 | 01-ReportApi 报表服务 | 双击 `启动服务.cmd`。服务在后台运行，浏览器访问 `http://服务IP:端口/health`，显示 `ok` 即启动成功。 |
+| 3 | 02-PrintAgent 打印代理 | 在各打印工作站解压，双击 `修改配置.cmd`，填写 `ServerUrl`（报表服务地址，如 `http://192.168.0.237:82`）。首次运行建议保留 `PrintBackend=DryRun` 模拟打印。 |
+| 4 | 02-PrintAgent 打印代理 | 双击 `启动服务.cmd` 启动后台代理。双击 `查看状态.cmd` 可随时检查运行与日志。 |
+
+> 提示：各模块目录结构完全统一，外层为 `.cmd` 操作脚本与 `config.ini` 配置文件，核心程序位于 `app/`，日志位于 `logs/`。
 
 ## 水印
 

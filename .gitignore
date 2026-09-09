@@ -11,6 +11,8 @@ artifacts/
 publish/
 temp-api-publish/
 deploy/portable/
+deploy/portable-agent/
+**/run/
 .preflight-transfer/
 *.zip
 scratch/

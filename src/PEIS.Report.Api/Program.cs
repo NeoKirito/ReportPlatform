@@ -17,7 +17,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.AddRollingFile(options =>
 {
     options.FilePrefix = "api";
-    options.LogDirectory = "logs";
+    var parentMarker = Path.Combine(AppContext.BaseDirectory, "..", "config.ini");
+    if (File.Exists(parentMarker))
+    {
+        options.LogDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "logs"));
+    }
+    else
+    {
+        options.LogDirectory = "logs";
+    }
     options.RetentionDays = 30;
 });
 

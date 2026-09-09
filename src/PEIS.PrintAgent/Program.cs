@@ -11,11 +11,30 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddRollingFile(options =>
 {
     options.FilePrefix = "agent";
-    options.LogDirectory = "logs";
+    var parentMarker = Path.Combine(AppContext.BaseDirectory, "..", "config.ini");
+    var parentAgentMarker = Path.Combine(AppContext.BaseDirectory, "..", "agent.ini");
+    if (File.Exists(parentMarker) || File.Exists(parentAgentMarker))
+    {
+        options.LogDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "logs"));
+    }
+    else
+    {
+        options.LogDirectory = "logs";
+    }
     options.RetentionDays = 30;
 });
-var simpleConfigPath = Path.Combine(AppContext.BaseDirectory, "agent.ini");
-if (File.Exists(simpleConfigPath))
+
+var candidateIniPaths = new[]
+{
+    Path.Combine(AppContext.BaseDirectory, "config.ini"),
+    Path.Combine(AppContext.BaseDirectory, "..", "config.ini"),
+    Path.Combine(AppContext.BaseDirectory, "agent.ini"),
+    Path.Combine(AppContext.BaseDirectory, "..", "agent.ini"),
+    Path.Combine(Environment.CurrentDirectory, "config.ini"),
+    Path.Combine(Environment.CurrentDirectory, "agent.ini"),
+};
+var simpleConfigPath = candidateIniPaths.FirstOrDefault(File.Exists);
+if (!string.IsNullOrEmpty(simpleConfigPath) && File.Exists(simpleConfigPath))
 {
     foreach (var rawLine in File.ReadLines(simpleConfigPath))
     {
@@ -52,7 +71,7 @@ builder.Services.AddSingleton<PrinterQueueManager>();
 builder.Services.AddSingleton<IPdfPreviewer, WebView2PdfPreviewer>();
 
 var mode = builder.Configuration["Agent:PrintBackend:Mode"] ?? "DryRun";
-if (string.Equals(mode, "Command", StringComparison.OrdinalIgnoreCase))
+if (string.Equals(mode, "Command", StringComparison.OrdinalIgnoreCase) || string.Equals(mode, "Shell", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddSingleton<IPrintBackend, CommandPrintBackend>();
 else
     builder.Services.AddSingleton<IPrintBackend, DryRunPrintBackend>();
