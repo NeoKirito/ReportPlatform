@@ -30,6 +30,9 @@ public sealed class WebView2PdfPreviewer(
     private static extern void SwitchToThisWindow(IntPtr hWnd, bool fAltTab);
 
     [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
+
+    [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
 
     [DllImport("user32.dll")]
@@ -56,6 +59,7 @@ public sealed class WebView2PdfPreviewer(
         try
         {
             ShowWindow(hWnd, SW_RESTORE);
+            ShowWindow(hWnd, 5); // SW_SHOW
             SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
 
             var foregroundWnd = GetForegroundWindow();
@@ -74,6 +78,11 @@ public sealed class WebView2PdfPreviewer(
                 BringWindowToTop(hWnd);
                 SetForegroundWindow(hWnd);
             }
+
+            keybd_event(0, 0, 0, 0);
+            SetForegroundWindow(hWnd);
+            BringWindowToTop(hWnd);
+            SetWindowPos(hWnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
             SwitchToThisWindow(hWnd, true);
         }
         catch
@@ -220,15 +229,20 @@ public sealed class WebView2PdfPreviewer(
         toolbar.Controls.Add(topMostCheck);
 
         var webView = new WebView2 { Dock = DockStyle.Fill };
-        form.Controls.Add(webView);
         form.Controls.Add(toolbar);
+        form.Controls.Add(webView);
+        toolbar.BringToFront();
 
         form.Shown += async (_, _) =>
         {
             try
             {
+                form.WindowState = FormWindowState.Normal;
+                form.BringToFront();
+                form.Activate();
                 ForceForegroundWindow(form.Handle);
 
+                _ = webView.Handle;
                 if (!webView.IsHandleCreated)
                 {
                     webView.CreateControl();
@@ -236,10 +250,12 @@ public sealed class WebView2PdfPreviewer(
 
                 try
                 {
-                    var userDataFolder = Path.Combine(Path.GetTempPath(), "PEIS.PrintAgent", "WebView2Data");
+                    var userDataFolder = Path.Combine(Path.GetTempPath(), "PEIS.PrintAgent", "WebView2Data", Environment.ProcessId.ToString());
                     Directory.CreateDirectory(userDataFolder);
                     var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(userDataFolder: userDataFolder);
+                    if (form.IsDisposed || !form.IsHandleCreated || webView.IsDisposed || !webView.IsHandleCreated) return;
                     await webView.EnsureCoreWebView2Async(env);
+                    if (form.IsDisposed || webView.IsDisposed) return;
                     webView.Source = new Uri(Path.GetFullPath(request.PdfPath));
                     status.Text = Path.GetFileName(request.PdfPath);
                     ForceForegroundWindow(form.Handle);

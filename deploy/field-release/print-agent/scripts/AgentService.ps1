@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('Start', 'Stop', 'Status')]
@@ -133,7 +133,7 @@ try {
                 [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process')
             }
             try {
-                $child = Start-Process -FilePath $exePath -WorkingDirectory $appRoot -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+                $child = Start-Process -FilePath $exePath -WorkingDirectory $appRoot -PassThru
             }
             finally {
                 foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
@@ -143,8 +143,8 @@ try {
             $child.Refresh()
             if ($child.HasExited) {
                 $errText = ''
-                if (Test-Path -LiteralPath $stderr) { $errText = (Get-Content -LiteralPath $stderr -Raw).Trim() }
-                if (!$errText -and (Test-Path -LiteralPath $stdout)) { $errText = (Get-Content -LiteralPath $stdout -Raw).Trim() }
+                $recentLog = Get-ChildItem -Path $logsRoot -Filter "agent-*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($recentLog) { $errText = (Get-Content -LiteralPath $recentLog.FullName -Tail 10 -ErrorAction SilentlyContinue) -join "`n" }
                 throw "PrintAgent exited unexpectedly (ExitCode: $($child.ExitCode)). $errText"
             }
 
@@ -152,13 +152,13 @@ try {
             $state | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding UTF8
 
             Write-Host '============================================================'
-            Write-Host "PrintAgent service started. PID: $($child.Id)"
-            Write-Host "Server URL : $serverUrl"
-            Write-Host "Station ID : $stationId"
-            Write-Host "Logs Path  : $logsRoot"
+            Write-Host "PrintAgent 打印代理已成功在后台启动。PID: $($child.Id)"
+            Write-Host "服务器地址 : $serverUrl"
+            Write-Host "工作站标识 : $stationId"
+            Write-Host "日志目录   : $logsRoot"
             Write-Host '============================================================'
-            Write-Host 'You may close this window.'
-            Write-Host 'Use Status script to check status, Stop script to stop service.'
+            Write-Host '提示：已托盘运行，没有控制台黑框占用屏幕，您可以直接关闭本黑框窗口！'
+            Write-Host '如需停止服务，请双击 [关闭服务.cmd] 或右键系统右下角托盘图标退出。'
         }
         catch {
             if ($child) {
