@@ -37,7 +37,7 @@ Copy-Item -LiteralPath (Join-Path $templateRoot 'Service.ps1') -Destination $scr
 Get-ChildItem -LiteralPath $templateRoot -File | Where-Object { $_.Name -ne 'Service.ps1' } | Copy-Item -Destination $packageRoot
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs\THIRD_PARTY_NOTICES.md') -Destination $packageRoot
 
-$connStr = 'Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;'
+  $connStr = ''
 $config = Get-Content -LiteralPath (Join-Path $repositoryRoot 'src\PEIS.Report.Api\appsettings.json') -Raw | ConvertFrom-Json
 $config.Urls = 'http://0.0.0.0:82'
 $config.ReportEngine.DefinitionSource = 'LegacySqlServer'

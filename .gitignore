@@ -16,3 +16,8 @@ deploy/portable-agent/
 .preflight-transfer/
 *.zip
 scratch/
+
+# Secrets
+*.env
+.env.*
+!*.env.example

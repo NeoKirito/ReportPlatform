@@ -1,0 +1,9 @@
+# 报表服务配置
+# 修改后重启服务生效
+
+# 监听端口
+Port=82
+
+# SQL Server 报表数据库连接字符串
+# 示例：Server=192.168.0.10;Database=TJXT3.0;User ID=report_user;Password="your-password";TrustServerCertificate=True;
+ConnectionString=Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password="YOUR_PASSWORD";TrustServerCertificate=True;

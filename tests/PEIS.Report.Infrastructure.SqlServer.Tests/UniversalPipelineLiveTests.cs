@@ -39,7 +39,7 @@ public class UniversalPipelineLiveTests
         var dbOptions = Options.Create(new ReportDatabaseOptions
         {
             Provider = "SqlServer",
-            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            ConnectionString = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;",
             CommandTimeoutSeconds = 30
         });
 
@@ -109,7 +109,7 @@ public class UniversalPipelineLiveTests
         var dbOptions = Options.Create(new ReportDatabaseOptions
         {
             Provider = "SqlServer",
-            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            ConnectionString = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;",
             CommandTimeoutSeconds = 30
         });
 
@@ -183,7 +183,7 @@ public class UniversalPipelineLiveTests
         var dbOptions = Options.Create(new ReportDatabaseOptions
         {
             Provider = "SqlServer",
-            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            ConnectionString = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;",
             CommandTimeoutSeconds = 30
         });
 
@@ -259,7 +259,7 @@ public class UniversalPipelineLiveTests
         var dbOptions = Options.Create(new ReportDatabaseOptions
         {
             Provider = "SqlServer",
-            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            ConnectionString = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;",
             CommandTimeoutSeconds = 30
         });
 
@@ -360,7 +360,7 @@ public class UniversalPipelineLiveTests
         var dbOptions = Options.Create(new ReportDatabaseOptions
         {
             Provider = "SqlServer",
-            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            ConnectionString = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;",
             CommandTimeoutSeconds = 30
         });
 
@@ -442,7 +442,7 @@ public class UniversalPipelineLiveTests
         var dbOptions = Options.Create(new ReportDatabaseOptions
         {
             Provider = "SqlServer",
-            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            ConnectionString = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;",
             CommandTimeoutSeconds = 30
         });
 
@@ -551,7 +551,7 @@ public class UniversalPipelineLiveTests
         var dbOptions = Options.Create(new ReportDatabaseOptions
         {
             Provider = "SqlServer",
-            ConnectionString = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;",
+            ConnectionString = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;",
             CommandTimeoutSeconds = 30
         });
 

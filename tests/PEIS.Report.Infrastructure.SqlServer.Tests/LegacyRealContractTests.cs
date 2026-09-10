@@ -75,7 +75,7 @@ public sealed class LegacyRealContractTests
     [Fact]
     public async Task Dump_All_54_Report_Definitions()
     {
-        const string connStr = "Server=192.168.0.237;Database=TJXT0616;User ID=sa;Password=Sxyckj#123;TrustServerCertificate=True;";
+        const string connStr = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;";
         await using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
         await conn.OpenAsync();
         await using var cmd = conn.CreateCommand();

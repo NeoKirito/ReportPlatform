@@ -1,122 +1,134 @@
 # PEIS.ReportPlatform
 
-C#/.NET 10 report/PDF and B/S silent-printing platform for PEIS.
+体检信息系统报表平台（.NET 10 + FastReport）
 
-## Windows portable API package
+## 项目简介
 
-Run `scripts/New-PortableReportPackage.ps1` to publish a self-contained Windows x64 ZIP under `artifacts/`.
-Extract the entire ZIP, fill `ConnectionString` in `config.ini` (default `Port=82`), and double-click
-`启动服务.cmd` / `关闭服务.cmd`. No SDK, IIS, print agent, or additional business configuration is required
-for the supported legacy database schema. The package uses the real SQL Server/FastReport engine.
-It also exposes `POST /BaseInfo/Report/GetReportByJson`, accepting the original JSON and returning a PDF.
-The IP address is the deployment machine's address; an existing listener on port 82 is never stopped automatically.
-See the included `使用说明.txt` for limitations and `scripts/Test-PortableReportPackage.ps1 -ZipPath <ZIP>` for
-isolated launcher checks (no real database access). The launcher runs a background process, not a Windows Service.
+本项目是体检信息系统（PEIS）的报表服务，替代原有的 IIS FastReport 报表服务。
 
-## Compatibility first
+### 核心功能
 
-The new engine is allowed to change internally, but existing PEIS report callers should not have to migrate.
-The legacy IIS package exposes `ReportsController.GetReportByJson(object data)` under the conventional route
-`api/{controller}/{action}/{id}`. The new API therefore keeps this public compatibility endpoint:
+- **PDF报表生成**：支持54种报表类型的动态生成
+- **静默打印**：支持多工作站自动打印到指定打印机
+- **兼容旧系统**：保持与原有Java体检系统的API接口兼容
 
-```http
-POST /api/Reports/GetReportByJson
-Content-Type: application/json
+### 技术架构
+
+```
+Java体检系统 → POST /BaseInfo/Report/GetReportByJson
+  → 解析JSON参数
+  → 加载FRX模板（从数据库）
+  → 执行SQL获取数据
+  → FastReport渲染生成PDF
+  → 返回PDF流
 ```
 
-**Request body: keep using the exact legacy JSON object.** The compatibility controller accepts raw JSON rather
-than forcing callers into a new `ReportId + Parameters` contract. The complete payload is preserved as
-`LegacyPayload` and passed into the new report engine so the final FastReport implementation can reproduce the
-old parameter semantics exactly.
+## 项目结构
 
-Response remains a direct PDF response (`application/pdf`), not a JSON wrapper.
+| 项目 | 说明 |
+|------|------|
+| PEIS.Report.Api | Web API 入口，兼容旧接口 |
+| PEIS.Report.Engine | 报表渲染引擎核心 |
+| PEIS.Report.FastReport.OpenSource | FastReport集成层 |
+| PEIS.Report.Infrastructure.SqlServer | SQL Server数据库层 |
+| PEIS.PrintAgent | 工作站打印Agent |
+| PEIS.Report.Contracts | 共享合约 |
 
-The new typed render endpoint exists only for diagnostics/new integrations:
+## 快速部署
 
-```http
-POST /internal/reports/pdf
+### 1. API服务端
+
+```powershell
+# 生成独立部署包
+.\scripts\New-PortableReportPackage.ps1
+
+# 解压后编辑 config.ini 填入数据库连接信息
+# 双击 启动服务.cmd
 ```
 
-It is not the PEIS migration contract.
+### 2. 工作站Agent
 
-## Printing requirement
+```powershell
+# 生成Agent部署包
+.\scripts\New-PortableAgentPackage.ps1
 
-One B/S business button can automatically print different documents to different physical printers without asking
-the operator to choose a printer each time.
-
-Example `REGISTRATION_PRINT`:
-
-- A4 guide sheet -> logical printer role `A4_GUIDE` -> workstation's configured A4 printer.
-- Barcode labels -> logical printer role `BARCODE` -> workstation's configured label printer.
-
-Printer selection is installation/configuration data, not normal PEIS business input.
-
-## Projects
-
-- `PEIS.Report.Contracts` — shared report/print contracts.
-- `PEIS.Report.Engine` — FastReport rendering boundary and performance pipeline.
-- `PEIS.Report.Api` — legacy-compatible PDF API + printing orchestration + SignalR.
-- `PEIS.PrintAgent` — Windows resident print agent with printer-role bindings and per-printer queues.
-
-## Legacy-compatible report flow
-
-```text
-PEIS existing call
-    POST /api/Reports/GetReportByJson
-    original JSON body
-              |
-              v
-Legacy compatibility controller
-              |
-              v
-LegacyReportRequestAdapter
-  - keeps complete raw JSON
-  - does not rename/remove legacy fields
-              |
-              v
-New Report.Engine
-  - definition/template cache
-  - data query
-  - image pipeline
-  - FastReport Prepare
-  - watermark
-  - PDF export
-              |
-              v
-application/pdf stream
+# 解压后编辑 agent.ini
+# 双击 启动服务.cmd
 ```
 
-## B/S silent printing
+## 配置说明
 
-The printing API is new functionality and is separate from the legacy PDF compatibility contract. A business action
-such as `REGISTRATION_PRINT` expands into A4 + barcode documents and routes each document by logical printer role.
+### API配置 (appsettings.json)
 
 ```json
-POST /api/print/actions
 {
-  "actionCode": "REGISTRATION_PRINT",
-  "stationId": "REG-01",
-  "parameters": {
-    "tjh": "TJ202608140001"
+  "Urls": "http://0.0.0.0:82",
+  "ReportEngine": {
+    "Renderer": "FastReportOpenSource",      // 必须用OpenSource版本
+    "DefinitionSource": "LegacySqlServer"    // 从数据库加载模板
+  },
+  "ReportDatabase": {
+    "Provider": "SqlServer",
+    "ConnectionString": "Server=...;Database=...;User ID=...;Password=...;"
   }
 }
 ```
 
-The final PEIS integration can reuse the same legacy business parameter object internally; only the print action and
-workstation identity are new concepts because the old service did not provide silent multi-device printing.
+### 数据库表
 
-## Current implementation boundary
+- `dbo.xt_bgdy_djwh_zzj` - 报表定义表（54种报表）
+  - `djid` - 报表ID
+  - `djmc` - 报表名称
+  - `dj_frx` - FRX模板（Base64编码）
+  - `djsql` - SQL查询语句
 
-The legacy `djwh + bbid` route is now evidenced against the supplied SQL Server source: the service resolves the
-confirmed definition table, decodes its Base64 UTF-8 FRX, supplies the `Master` data set, and renders a base PDF with
-`FastReport.OpenSource` plus the official PdfSimple exporter. The public compatibility controller remains outside the
-renderer so PEIS callers do not need to change their JSON contract.
+## Java系统对接
 
-The current evidence is intentionally narrower than a full production acceptance claim: application-level watermark
-behavior, old/new visual PDF equivalence, production-load targets, Windows Service packaging, and physical printer
-output still require site approval and on-site validation.
+Java体检系统调用示例：
 
-For practical startup, configuration, security, test, printing, deployment, and rollback steps, read
-[`docs/USAGE_AND_DEPLOYMENT_GUIDE.md`](docs/USAGE_AND_DEPLOYMENT_GUIDE.md). Supporting evidence remains in
-`docs/ARCHITECTURE.md`, `docs/PRINT_ROUTING.md`, `docs/FASTREPORT_SMOKE_TEST_STATUS.md`, and
-`docs/LEGACY_DATABASE_CONTRACT.md`.
+```java
+String url = "http://YOUR_SERVER:82/BaseInfo/Report/GetReportByJson";
+// POST JSON body 包含 djh 报表ID 等参数
+```
+
+### 常用报表参数
+
+| 参数 | 说明 |
+|------|------|
+| djh | 报表ID（必填） |
+| grtjgcjjgid | 个人体检结果ID |
+| dwtjgcjjgid | 单位体检结果ID |
+| sfxmddid | 收费项目ID |
+| tjjfjlid | 体检结论ID |
+| tjjsdjid | 体检检速ID |
+| tjfyrzid | 体检预约ID |
+| kpid | 考评ID |
+| qjbj | 区间标识 |
+| czymc | 操作员名称 |
+
+## 开发说明
+
+### 运行测试
+
+```bash
+dotnet test
+```
+
+### 构建发布
+
+```bash
+dotnet publish src/PEIS.Report.Api -c Release -r win-x64 --self-contained
+```
+
+## 注意事项
+
+1. **数据库连接**：必须配置正确的SQL Server连接字符串
+2. **渲染器选择**：必须使用 `FastReportOpenSource`，不要用 `FastReport`（会导致Stub错误）
+3. **定义来源**：必须使用 `LegacySqlServer`，不要用 `Deterministic`（会跳过数据库）
+4. **端口冲突**：默认端口82，如被占用需修改
+
+## 相关文档
+
+- [部署指南](docs/USAGE_AND_DEPLOYMENT_GUIDE.md)
+- [架构说明](docs/ARCHITECTURE.md)
+- [数据库契约](docs/LEGACY_DATABASE_CONTRACT.md)
