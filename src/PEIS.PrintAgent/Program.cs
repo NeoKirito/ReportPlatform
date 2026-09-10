@@ -81,6 +81,8 @@ builder.Services.AddSingleton<IPdfPreviewer, WebView2PdfPreviewer>();
 var mode = builder.Configuration["Agent:PrintBackend:Mode"] ?? "DryRun";
 if (string.Equals(mode, "Command", StringComparison.OrdinalIgnoreCase) || string.Equals(mode, "Shell", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddSingleton<IPrintBackend, CommandPrintBackend>();
+else if (string.Equals(mode, "Spool", StringComparison.OrdinalIgnoreCase) || string.Equals(mode, "WinPrint", StringComparison.OrdinalIgnoreCase))
+    builder.Services.AddSingleton<IPrintBackend, SpoolPrintBackend>();
 else
     builder.Services.AddSingleton<IPrintBackend, DryRunPrintBackend>();
 

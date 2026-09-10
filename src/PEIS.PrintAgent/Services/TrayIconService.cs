@@ -62,7 +62,7 @@ public sealed class TrayIconService(
 
                 _notifyIcon = new NotifyIcon
                 {
-                    Icon = SystemIcons.Application,
+                    Icon = LoadAppIcon(),
                     ContextMenuStrip = contextMenu,
                     Text = TruncateText($"PEIS 打印代理 ({station})", 63),
                     Visible = true
@@ -196,5 +196,35 @@ public sealed class TrayIconService(
     {
         if (string.IsNullOrEmpty(text) || text.Length <= maxLength) return text;
         return text[..maxLength];
+    }
+
+    /// <summary>
+    /// Load app.ico from Resources directory with fallback to SystemIcons.Application.
+    /// Search order: Resources/app.ico → app.ico in app base → SystemIcons.Application
+    /// </summary>
+    private static Icon LoadAppIcon()
+    {
+        var candidatePaths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Resources", "app.ico"),
+            Path.Combine(AppContext.BaseDirectory, "app.ico"),
+        };
+        foreach (var path in candidatePaths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    var icon = new Icon(path);
+                    if (icon.Size.Width > 0 && icon.Size.Height > 0)
+                        return icon;
+                }
+            }
+            catch
+            {
+                // Icon file may be corrupted or locked, continue to next candidate
+            }
+        }
+        return SystemIcons.Application;
     }
 }

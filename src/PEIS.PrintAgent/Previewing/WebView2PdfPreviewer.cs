@@ -135,7 +135,8 @@ public sealed class WebView2PdfPreviewer(
             WindowState = FormWindowState.Normal,
             MinimumSize = new Size(700, 500),
             TopMost = true,
-            ShowInTaskbar = true
+            ShowInTaskbar = true,
+            Icon = LoadAppIcon()
         };
 
         var toolbar = new FlowLayoutPanel
@@ -295,5 +296,34 @@ public sealed class WebView2PdfPreviewer(
 
         form.FormClosed += (_, _) => webView.Dispose();
         return form;
+    }
+
+    /// <summary>
+    /// Load app.ico from Resources directory with fallback to SystemIcons.Application.
+    /// </summary>
+    private static Icon LoadAppIcon()
+    {
+        var candidatePaths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Resources", "app.ico"),
+            Path.Combine(AppContext.BaseDirectory, "app.ico"),
+        };
+        foreach (var path in candidatePaths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    var icon = new Icon(path);
+                    if (icon.Size.Width > 0 && icon.Size.Height > 0)
+                        return icon;
+                }
+            }
+            catch
+            {
+                // Icon file may be corrupted or locked
+            }
+        }
+        return SystemIcons.Application;
     }
 }
