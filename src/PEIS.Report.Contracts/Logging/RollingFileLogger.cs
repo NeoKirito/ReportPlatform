@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -52,7 +52,24 @@ public sealed class RollingFileLoggerProvider : ILoggerProvider, IAsyncDisposabl
         var token = _cts.Token;
         var reader = _channel.Reader;
 
-        while (await reader.WaitToReadAsync(token).ConfigureAwait(false))
+        try
+        {
+            while (await reader.WaitToReadAsync(token).ConfigureAwait(false))
+            {
+                while (reader.TryRead(out var logMessage))
+                {
+                    try
+                    {
+                        WriteToFile(logMessage);
+                    }
+                    catch
+                    {
+                        // Fallback to ignore disk failure to never crash the host
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
         {
             while (reader.TryRead(out var logMessage))
             {
@@ -62,7 +79,7 @@ public sealed class RollingFileLoggerProvider : ILoggerProvider, IAsyncDisposabl
                 }
                 catch
                 {
-                    // Fallback to ignore disk failure to never crash the host
+                    // Fallback to ignore disk failure
                 }
             }
         }

@@ -14,18 +14,34 @@ public sealed class CommandPrintBackend(IOptions<AgentOptions> options, ILogger<
     public async Task PrintAsync(string pdfPath, string printerName, int copies, bool duplex, CancellationToken cancellationToken)
     {
         var backend = options.Value.PrintBackend;
-        if (string.IsNullOrWhiteSpace(backend.Executable)) throw new InvalidOperationException("PrintBackend:Executable is required for Command mode.");
+        var executable = backend.Executable;
+        if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable))
+        {
+            executable = SpoolPrintBackend.ResolvePrintExecutable(options.Value);
+        }
 
-        var arguments = backend.ArgumentsTemplate
+        if (string.IsNullOrWhiteSpace(executable))
+            throw new InvalidOperationException("PrintBackend:Executable is required for Command mode, or ensure tools/SumatraPDF.exe exists.");
+
+        var template = backend.ArgumentsTemplate;
+        if (string.IsNullOrWhiteSpace(template) || template == "{file} {printer} {copies}")
+        {
+            var isSumatra = Path.GetFileNameWithoutExtension(executable).Contains("Sumatra", StringComparison.OrdinalIgnoreCase);
+            template = isSumatra
+                ? "-print-to {printer} -silent -exit-when-done -print-settings {copies}x {file}"
+                : "{file} {printer} {copies}";
+        }
+
+        var arguments = template
             .Replace("{file}", Quote(pdfPath), StringComparison.Ordinal)
             .Replace("{printer}", Quote(printerName), StringComparison.Ordinal)
             .Replace("{copies}", copies.ToString(), StringComparison.Ordinal)
             .Replace("{duplex}", duplex ? "true" : "false", StringComparison.Ordinal);
 
-        logger.LogInformation("Starting print backend {Executable} for printer {Printer}", backend.Executable, printerName);
+        logger.LogInformation("Starting print backend {Executable} for printer {Printer}", executable, printerName);
         using var process = Process.Start(new ProcessStartInfo
         {
-            FileName = backend.Executable,
+            FileName = executable,
             Arguments = arguments,
             UseShellExecute = false,
             CreateNoWindow = true

@@ -275,16 +275,19 @@ public sealed class AgentWorker(
             await SendDeliveryStatusAsync(connection, cfg.AgentId, delivery.JobId, ReportDeliveryStatus.Downloading, null, token);
             var path = await artifacts.DownloadDeliveryAsync(cfg.ServerUrl, cfg.WorkDirectory, delivery, token);
 
-            var canPrint = delivery.Action is ReportDeliveryAction.Print or ReportDeliveryAction.PreviewAndPrint;
+            var isDirectPrint = delivery.Action == ReportDeliveryAction.Print;
+            var canPrint = isDirectPrint || delivery.Action == ReportDeliveryAction.PreviewAndPrint;
+            var shouldPrintSilently = isDirectPrint || (canPrint && cfg.Printing.Silent);
+
             var installed = printers.GetInstalledPrinters();
-            // 查找之前记住的打印机（按报表ID）
+            // 查找之前记住的打印机（按报表ID）；若为静默打印，允许使用默认打印机兜底
             var rememberedPrinter = canPrint
                 ? deliveryPrinters.Resolve(
                     delivery.Djid,
                     delivery.PrinterName,
                     installed,
                     cfg.Printing.DefaultPrinter,
-                    cfg.Printing.Silent)
+                    useDefaultWhenMissing: shouldPrintSilently)
                 : null;
 
             // 静默打印：直接打印到记住的/默认打印机
@@ -294,12 +297,19 @@ public sealed class AgentWorker(
                 await QueueDeliveryPrintAsync(connection, cfg.AgentId, delivery, path, selectedPrinter);
             }
 
-            if (canPrint && cfg.Printing.Silent)
+            // 静默打印分流：当调用方明确要求 action=Print 或 本地配置了 SilentPrint=true 时，直接执行打印而不弹窗
+            if (shouldPrintSilently)
             {
-                if (string.IsNullOrWhiteSpace(rememberedPrinter))
+                var targetPrinter = rememberedPrinter ??
+                    DeliveryPrinterResolver.SuggestedDefault(installed, cfg.Printing.DefaultPrinter);
+
+                if (string.IsNullOrWhiteSpace(targetPrinter))
+                {
                     throw new InvalidOperationException(
-                        "Silent printing needs a remembered Djid printer, Agent:Printing:DefaultPrinter, or Windows default printer.");
-                await PrintAsync(rememberedPrinter);
+                        $"工作站 [{cfg.StationId}] 未找到可用打印机进行静默打印。请检查工作站是否已安装打印机，或在配置文件中指定 DefaultPrinter。");
+                }
+
+                await PrintAsync(targetPrinter);
                 return;
             }
 

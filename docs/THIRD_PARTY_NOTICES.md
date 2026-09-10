@@ -18,3 +18,16 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Source: [FastReport Open Source LICENSE.md](https://github.com/FastReports/FastReport/blob/master/LICENSE.md).
+
+## SumatraPDF
+
+PEIS.PrintAgent bundles a portable standalone binary of SumatraPDF (`tools/SumatraPDF.exe`) as a lightweight, headless PDF print engine.
+
+| Tool | Version | License |
+|---|---:|---|
+| `SumatraPDF` | `3.5.2` | GPLv3 / BSD |
+
+SumatraPDF is an open-source PDF viewer and command-line printing tool developed by Krzysztof Kowalczyk and contributors.
+Source code & license: [https://github.com/sumatrapdfreader/sumatrapdf](https://github.com/sumatrapdfreader/sumatrapdf)
+Official website: [https://www.sumatrapdfreader.org](https://www.sumatrapdfreader.org)
+

@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using PEIS.PrintAgent.Services;
+using PEIS.PrintAgent.Printing;
 
 namespace PEIS.PrintAgent.Previewing;
 
@@ -136,7 +138,7 @@ public sealed class WebView2PdfPreviewer(
             MinimumSize = new Size(700, 500),
             TopMost = true,
             ShowInTaskbar = true,
-            Icon = LoadAppIcon()
+            Icon = AppIconHelper.LoadAppIcon()
         };
 
         var toolbar = new FlowLayoutPanel
@@ -199,6 +201,11 @@ public sealed class WebView2PdfPreviewer(
                 {
                     await request.PrintAsync(selectedPrinter);
                     status.Text = $"已提交到本机打印队列：{selectedPrinter}";
+                    await Task.Delay(300);
+                    if (!form.IsDisposed)
+                    {
+                        form.Close();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -264,18 +271,34 @@ public sealed class WebView2PdfPreviewer(
                 }
                 catch (Exception webViewEx)
                 {
-                    logger.LogWarning(webViewEx, "Embedded WebView2 initialization failed for {PdfPath}; falling back to system default viewer.", request.PdfPath);
+                    logger.LogWarning(webViewEx, "Embedded WebView2 initialization failed for {PdfPath}; checking dedicated preview fallback.", request.PdfPath);
                     try
                     {
-                        status.Text = $"已调起系统预览：{Path.GetFileName(request.PdfPath)}";
-                        Process.Start(new ProcessStartInfo
+                        var printExe = SpoolPrintBackend.ResolvePrintExecutable(options.Value);
+                        if (!string.IsNullOrWhiteSpace(printExe) && File.Exists(printExe))
                         {
-                            FileName = Path.GetFullPath(request.PdfPath),
-                            UseShellExecute = true,
-                            WindowStyle = ProcessWindowStyle.Normal
-                        });
-                        ForceForegroundWindow(form.Handle);
-                        opened.TrySetResult();
+                            status.Text = $"已调起独立预览：{Path.GetFileName(request.PdfPath)}";
+                            Process.Start(new ProcessStartInfo
+                            {
+                                FileName = printExe,
+                                Arguments = $"\"{Path.GetFullPath(request.PdfPath)}\"",
+                                UseShellExecute = false
+                            });
+                            ForceForegroundWindow(form.Handle);
+                            opened.TrySetResult();
+                        }
+                        else
+                        {
+                            status.Text = $"已调起系统预览：{Path.GetFileName(request.PdfPath)}";
+                            Process.Start(new ProcessStartInfo
+                            {
+                                FileName = Path.GetFullPath(request.PdfPath),
+                                UseShellExecute = true,
+                                WindowStyle = ProcessWindowStyle.Normal
+                            });
+                            ForceForegroundWindow(form.Handle);
+                            opened.TrySetResult();
+                        }
                     }
                     catch (Exception fallbackEx)
                     {
@@ -298,32 +321,4 @@ public sealed class WebView2PdfPreviewer(
         return form;
     }
 
-    /// <summary>
-    /// Load app.ico from Resources directory with fallback to SystemIcons.Application.
-    /// </summary>
-    private static Icon LoadAppIcon()
-    {
-        var candidatePaths = new[]
-        {
-            Path.Combine(AppContext.BaseDirectory, "Resources", "app.ico"),
-            Path.Combine(AppContext.BaseDirectory, "app.ico"),
-        };
-        foreach (var path in candidatePaths)
-        {
-            try
-            {
-                if (File.Exists(path))
-                {
-                    var icon = new Icon(path);
-                    if (icon.Size.Width > 0 && icon.Size.Height > 0)
-                        return icon;
-                }
-            }
-            catch
-            {
-                // Icon file may be corrupted or locked
-            }
-        }
-        return SystemIcons.Application;
-    }
 }
