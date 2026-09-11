@@ -1,7 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <ApplicationIcon Condition="Exists('Resources\app.ico')">Resources\app.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="Resources\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
         <ProjectReference Include="..\PEIS.Report.Contracts\PEIS.Report.Contracts.csproj" />
     <ProjectReference Include="..\PEIS.Report.Docx.OpenXml\PEIS.Report.Docx.OpenXml.csproj" />
