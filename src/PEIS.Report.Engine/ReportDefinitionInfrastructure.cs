@@ -59,6 +59,21 @@ public interface IReportDataProvider
 }
 
 /// <summary>
+/// 解析外部业务标识（如 pe_xtcs_bgmb 表的 bgurl、bgmbid 等）为真正的 FastReport 单据 ID（xt_bgdy_djwh_zzj 的 djid）。
+/// 仅当 DYGS = '2' 时匹配 FastReport 专属单据。
+/// </summary>
+public interface IFastReportDjidResolver
+{
+    Task<string> ResolveDjidAsync(string? rawId, string? fileName = null, CancellationToken cancellationToken = default);
+}
+
+public sealed class NullFastReportDjidResolver : IFastReportDjidResolver
+{
+    public Task<string> ResolveDjidAsync(string? rawId, string? fileName = null, CancellationToken cancellationToken = default)
+        => Task.FromResult(string.IsNullOrWhiteSpace(rawId) ? "LEGACY" : rawId.Trim());
+}
+
+/// <summary>
 /// A cache of immutable metadata only. It deliberately never caches a mutable FastReport Report instance.
 /// </summary>
 public sealed class ReportDefinitionCache

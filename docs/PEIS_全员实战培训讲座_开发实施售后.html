@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEIS 体检信息系统全景讲座 - 业务闭环、技术架构、接口集成与实施运维</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+        body {
+            font-family: 'Noto Sans SC', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #F8FAFC;
+            color: #1E293B;
+            overflow-x: hidden;
+        }
+
+        .code-font {
+            font-family: 'Fira Code', monospace;
+        }
+
+        /* 轻盈背景渐变与网格 */
+        .bg-light-mesh {
+            background-color: #F8FAFC;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(224, 242, 254, 0.75) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(204, 251, 241, 0.65) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, rgba(241, 245, 249, 0.8) 0px, transparent 50%),
+                linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+        }
+
+        /* 现代化轻盈毛玻璃卡片 */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.88);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(226, 232, 240, 0.9);
+            box-shadow: 0 4px 20px -2px rgba(148, 163, 184, 0.1), 0 2px 6px -1px rgba(148, 163, 184, 0.06);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(2, 132, 199, 0.4);
+            box-shadow: 0 12px 28px -4px rgba(2, 132, 199, 0.12), 0 4px 10px -2px rgba(2, 132, 199, 0.06);
+        }
+
+        .glass-nav {
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        /* 文本渐变 - 科技蓝青清新色调 */
+        .text-gradient-sky {
+            background: linear-gradient(135deg, #0284C7 0%, #0D9488 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .text-gradient-indigo {
+            background: linear-gradient(135deg, #4F46E5 0%, #0284C7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* 幻灯片过渡 */
+        .slide {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.35s ease-in-out, transform 0.35s ease-in-out;
+            transform: scale(0.99);
+            min-height: calc(100vh - 128px);
+        }
+        .slide.active {
+            display: flex;
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* 代码高亮区 */
+        .code-block {
+            background: #0F172A;
+            color: #E2E8F0;
+            border-radius: 0.75rem;
+            border: 1px solid #1E293B;
+        }
+
+        /* SQL 专用展示卡片 */
+        .sql-card {
+            background: #0B1120;
+            border-radius: 0.75rem;
+            border: 1px solid #1E293B;
+            color: #E2E8F0;
+        }
+
+        /* 细滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #F1F5F9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94A3B8;
+        }
+    </style>
+</head>
+<body class="bg-light-mesh text-slate-800 flex flex-col h-screen select-none">
+
+    <!-- 顶部极简导航 -->
+    <header class="h-16 glass-nav px-6 flex items-center justify-between z-50 flex-shrink-0 shadow-sm">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-500 to-teal-500 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
+                <i data-lucide="activity" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-base tracking-tight flex items-center gap-2 text-slate-900">
+                    <span class="text-gradient-sky font-extrabold">PEIS 体检信息系统全景讲座</span>
+                    <span class="text-xs px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-mono font-semibold">企业级全方位技术与业务实战</span>
+                </h1>
+            </div>
+        </div>
+
+        <!-- 幻灯片胶囊导航 (10 大核心篇章) -->
+        <div class="hidden xl:flex items-center space-x-1 bg-slate-100/90 p-1 rounded-full border border-slate-200 text-xs font-medium">
+            <button onclick="goToSlide(0)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="0">1. 讲座开篇</button>
+            <button onclick="goToSlide(1)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="1">2. 业务大闭环</button>
+            <button onclick="goToSlide(2)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="2">3. 基础字典与套餐</button>
+            <button onclick="goToSlide(3)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="3">4. 科室分检与智能录入</button>
+            <button onclick="goToSlide(4)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="4">5. 总检决策引擎</button>
+            <button onclick="goToSlide(5)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="5">6. 报表微服务与渲染</button>
+            <button onclick="goToSlide(6)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="6">7. 集成打印与Agent</button>
+            <button onclick="goToSlide(7)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="7">8. 外部接口(LIS/PACS/HIS)</button>
+            <button onclick="goToSlide(8)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="8">9. 团检/职业病/健康证</button>
+            <button onclick="goToSlide(9)" class="nav-dot px-2.5 py-1 rounded-full transition-all text-slate-600 hover:text-slate-900" data-index="9">10. 实施运维SQL工具箱 ⭐</button>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <button id="btn-fullscreen" onclick="toggleFullScreen()" class="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 transition" title="全屏演示 (快捷键 F)">
+                <i data-lucide="maximize" class="w-4 h-4"></i>
+            </button>
+            <div class="text-xs font-mono font-semibold text-slate-600 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm" id="slide-counter">
+                1 / 10
+            </div>
+        </div>
+    </header>
+
+    <!-- 幻灯片主体视窗 -->
+    <main class="flex-1 overflow-y-auto p-4 md:p-8 flex items-center justify-center relative">
+
+        <!-- ==================== SLIDE 1: 讲座总览与蓝图 ==================== -->
+        <section class="slide active w-full max-w-7xl flex-col justify-center items-center text-center space-y-6" id="slide-0">
+            <div class="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-sky-50 border border-sky-200/80 text-sky-700 text-xs font-semibold shadow-sm">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5 text-sky-500"></i>
+                <span>体检信息系统 (PEIS) 全业务、全技术、全集成专题培训讲座</span>
+            </div>
+
+            <div class="space-y-3 max-w-4xl">
+                <h1 class="text-3xl md:text-5xl font-black tracking-tight text-slate-900 leading-tight">
+                    PEIS 体检信息系统 <br><span class="text-gradient-sky">业务闭环 · 架构底座 · 接口集成 · 实施运维</span>
+                </h1>
+                <p class="text-slate-600 text-base md:text-lg font-normal leading-relaxed max-w-3xl mx-auto">
+                    系统性打通体检“前台预约 ➔ 登记开单 ➔ 科室分检 ➔ 总检决策 ➔ 报表渲染 ➔ 工作站打印 ➔ 团检评估 ➔ 售后排错”全栈知识体系。
+                </p>
+            </div>
+
+            <!-- 5 大核心支柱 -->
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 w-full text-left pt-4">
+                <div class="glass-card p-4 rounded-2xl border-sky-100">
+                    <div class="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center mb-2.5">
+                        <i data-lucide="git-commit" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="font-bold text-sm text-slate-900 mb-1">1. 业务生命周期</h3>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">体检状态从 0(未检) 到 8(已总检) 的严密状态机与控制节点。</p>
+                </div>
+                <div class="glass-card p-4 rounded-2xl border-teal-100">
+                    <div class="w-9 h-9 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center mb-2.5">
+                        <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="font-bold text-sm text-slate-900 mb-1">2. 总检决策引擎</h3>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">小结自动生成、建议智能合并、异常过滤与规则参数控制。</p>
+                </div>
+                <div class="glass-card p-4 rounded-2xl border-indigo-100">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-2.5">
+                        <i data-lucide="printer" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="font-bold text-sm text-slate-900 mb-1">3. 报表与集成打印</h3>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">.NET 10 + FastReport 渲染微服务与工位 Agent 静默分流。</p>
+                </div>
+                <div class="glass-card p-4 rounded-2xl border-purple-100">
+                    <div class="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-2.5">
+                        <i data-lucide="network" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="font-bold text-sm text-slate-900 mb-1">4. 医院外联生态</h3>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">LIS 检验、PACS 影像图谱、HIS 计费与排队叫号/自助机。</p>
+                </div>
+                <div class="glass-card p-4 rounded-2xl border-emerald-100">
+                    <div class="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-2.5">
+                        <i data-lucide="wrench" class="w-4 h-4"></i>
+                    </div>
+                    <h3 class="font-bold text-sm text-slate-900 mb-1">5. 实施运维宝典</h3>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">状态卡死重置、数据修复、模板调试及售后高频 SQL。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 2: 体检业务全流程大闭环 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-5" id="slide-1">
+            <div class="border-b border-slate-200 pb-3 flex items-center justify-between">
+                <div>
+                    <span class="text-xs font-mono font-bold text-sky-600 uppercase tracking-wider">BUSINESS LIFECYCLE</span>
+                    <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">体检业务全生命周期大闭环与状态机</h2>
+                </div>
+                <span class="text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">主线业务流转</span>
+            </div>
+
+            <!-- 5 阶段流转卡片 -->
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3.5">
+                <div class="glass-card p-4 rounded-xl border-blue-200 flex flex-col justify-between">
+                    <div>
+                        <div class="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full inline-block mb-1.5">阶段 1 · 预约与开单</div>
+                        <h4 class="font-bold text-sm text-slate-900 mb-1">预约 / 登记报到</h4>
+                        <p class="text-xs text-slate-500 leading-relaxed">
+                            • 刷身份证读取人员档案（`pe_tjryxx`）<br>
+                            • 选择个检/团检套餐，加项与打折<br>
+                            • 生成体检号（`pe_grtjgcjjg`）<br>
+                            • 打印导检单与采血条码
+                        </p>
+                    </div>
+                    <div class="text-[11px] font-mono text-blue-700 bg-blue-50/80 p-1.5 rounded mt-3">状态: tjzt = 0 (未检)</div>
+                </div>
+
+                <div class="glass-card p-4 rounded-xl border-indigo-200 flex flex-col justify-between">
+                    <div>
+                        <div class="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full inline-block mb-1.5">阶段 2 · 检查与接口</div>
+                        <h4 class="font-bold text-sm text-slate-900 mb-1">科室分检执行</h4>
+                        <p class="text-xs text-slate-500 leading-relaxed">
+                            • 医生工作站录入临床小结（内/外/五官）<br>
+                            • LIS 检验结果双向自动回传<br>
+                            • PACS 彩超/放射图谱与报告拉取<br>
+                            • 自动判断参考值与高低异常标识
+                        </p>
+                    </div>
+                    <div class="text-[11px] font-mono text-indigo-700 bg-indigo-50/80 p-1.5 rounded mt-3">状态: jczt = 8 (科室完成)</div>
+                </div>
+
+                <div class="glass-card p-4 rounded-xl border-teal-200 flex flex-col justify-between">
+                    <div>
+                        <div class="text-[10px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full inline-block mb-1.5">阶段 3 · 汇总与审核</div>
+                        <h4 class="font-bold text-sm text-slate-900 mb-1">总检汇总决策</h4>
+                        <p class="text-xs text-slate-500 leading-relaxed">
+                            • 汇总各科室异常诊断（`pe_tjxmxq_zdxj`）<br>
+                            • 智能生成总检综述与指导建议<br>
+                            • 自动诊断专家库规则匹配<br>
+                            • 主检医生签名与总检审核（`pe_tjzjshjl`）
+                        </p>
+                    </div>
+                    <div class="text-[11px] font-mono text-teal-700 bg-teal-50/80 p-1.5 rounded mt-3">状态: tjzt = 8 (总检完成)</div>
+                </div>
+
+                <div class="glass-card p-4 rounded-xl border-emerald-200 flex flex-col justify-between">
+                    <div>
+                        <div class="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-block mb-1.5">阶段 4 · 生成与交付</div>
+                        <h4 class="font-bold text-sm text-slate-900 mb-1">报告生成与打印</h4>
+                        <p class="text-xs text-slate-500 leading-relaxed">
+                            • FastReport 微服务渲染基础 PDF<br>
+                            • 动态合并目录、封面、公章、签名<br>
+                            • 保存落盘并记录 `bgurl`<br>
+                            • PrintAgent 桌面静默/预览打印
+                        </p>
+                    </div>
+                    <div class="text-[11px] font-mono text-emerald-700 bg-emerald-50/80 p-1.5 rounded mt-3">状态: bgsczt = 1 (已生成)</div>
+                </div>
+
+                <div class="glass-card p-4 rounded-xl border-amber-200 flex flex-col justify-between">
+                    <div>
+                        <div class="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full inline-block mb-1.5">阶段 5 · 团检与服务</div>
+                        <h4 class="font-bold text-sm text-slate-900 mb-1">团检结算与随访</h4>
+                        <p class="text-xs text-slate-500 leading-relaxed">
+                            • 单位团检费用对账与发票结算<br>
+                            • 团检群体分析报告与阳性率统计<br>
+                            • 重大阳性危机值随访追踪与通知<br>
+                            • 移动端/微信公众号查报告推送
+                        </p>
+                    </div>
+                    <div class="text-[11px] font-mono text-amber-700 bg-amber-50/80 p-1.5 rounded mt-3">服务: 团检交付与健康管理</div>
+                </div>
+            </div>
+
+            <!-- 核心数据表流转关系 -->
+            <div class="glass-card p-3 rounded-xl border-slate-200 text-xs">
+                <div class="font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                    <i data-lucide="database" class="w-4 h-4 text-sky-600"></i>
+                    <span>核心主干数据表关联链路 (Core ER Relation)</span>
+                </div>
+                <div class="text-slate-600 font-mono text-[11px] overflow-x-auto whitespace-nowrap py-1">
+                    <span class="text-blue-700 font-bold">pe_tjryxx (人员基本档案)</span> ➔ 
+                    <span class="text-indigo-700 font-bold">pe_tjdj (体检登记单)</span> ➔ 
+                    <span class="text-sky-700 font-bold">pe_grtjgcjjg (个人体检主表)</span> ➔ 
+                    <span class="text-teal-700 font-bold">pe_tjxmxq (科室收费项目)</span> ➔ 
+                    <span class="text-purple-700 font-bold">pe_tjxmxq_zdxj (分检诊断小结)</span> ➔ 
+                    <span class="text-emerald-700 font-bold">pe_tjzjshjl (总检审核结论)</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 3: 基础字典与套餐体系 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-5" id="slide-2">
+            <div class="border-b border-slate-200 pb-3">
+                <span class="text-xs font-mono font-bold text-sky-600 uppercase tracking-wider">FOUNDATION & PACKAGE SYSTEM</span>
+                <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">体检底层基石：三级字典结构、套餐配置与价格策略</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs">
+                <!-- 1. 三级字典体系 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-sky-800 text-sm mb-2.5">
+                            <i data-lucide="layers" class="w-4 h-4 text-sky-600"></i>
+                            <span>1. 经典“科室-大项-小项”三级结构</span>
+                        </div>
+                        <div class="space-y-2 font-mono">
+                            <div class="p-2 bg-sky-50/70 rounded-lg border border-sky-100">
+                                <span class="font-bold text-sky-900">Level 1: 科室 (pe_ksxx)</span>
+                                <div class="text-[11px] text-slate-600">内科、外科、放射科、检验科、彩超室...</div>
+                            </div>
+                            <div class="p-2 bg-indigo-50/70 rounded-lg border border-indigo-100">
+                                <span class="font-bold text-indigo-900">Level 2: 收费项目大单 (pe_tjdd_sfxmdd)</span>
+                                <div class="text-[11px] text-slate-600">血常规五分类、肝功七项、胸部CT、腹部彩超...</div>
+                            </div>
+                            <div class="p-2 bg-teal-50/70 rounded-lg border border-teal-100">
+                                <span class="font-bold text-teal-900">Level 3: 检查项目小项 (pe_tjdd_jcxmddnr)</span>
+                                <div class="text-[11px] text-slate-600">白细胞计数(WBC)、谷丙转氨酶(ALT)、收缩压...</div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-500 mt-2">大单负责计费与导检，小单负责具体指标、单位与参考值范围。</p>
+                </div>
+
+                <!-- 2. 套餐配置与复制 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-indigo-800 text-sm mb-2.5">
+                            <i data-lucide="package" class="w-4 h-4 text-indigo-600"></i>
+                            <span>2. 套餐分类与组合模板 (`pe_tctp`)</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                <b>人群分类套餐</b>：入职体检、中老年套餐、妇女两癌筛查、公务员体检。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                <b>职业危害套餐</b>：接噪人员套餐、粉尘危害套餐、高温作业套餐。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                <b>组合打包规则</b>：套餐内包含多个收费大项，支持套餐一键应用与个性化自由加减项。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-indigo-700 bg-indigo-50 p-2 rounded">
+                        ★ 支持按性别、婚否自动限制项目（如未婚限制妇检）。
+                    </div>
+                </div>
+
+                <!-- 3. 价格体系与折扣 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-teal-800 text-sm mb-2.5">
+                            <i data-lucide="calculator" class="w-4 h-4 text-teal-600"></i>
+                            <span>3. 灵活的价格体系与结算策略</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                <b>标准物价与协议价</b>：对齐医院物价标准编码，支持单位协议折扣率（如 8 折、75 折）。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                <b>个人支付 vs 单位统筹</b>：支持混合支付模式（如单位定额 500 元，超出部分个人自费补差）。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                <b>弃检与退费机制</b>：未检或弃检项目支持明细退费，自动重新计算总金额。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-teal-700 bg-teal-50 p-2 rounded">
+                        ★ 财务收费凭条即时生成，防止漏费、少费。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 4: 科室分检与智能录入 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-5" id="slide-3">
+            <div class="border-b border-slate-200 pb-3">
+                <span class="text-xs font-mono font-bold text-sky-600 uppercase tracking-wider">SEPARATE INSPECTION</span>
+                <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">科室分检工作站：智能录入、异常判定与知识库</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                <!-- 临床科室快速小结 -->
+                <div class="glass-card p-5 rounded-2xl space-y-3">
+                    <div class="flex items-center gap-2 font-bold text-sky-800 text-sm">
+                        <i data-lucide="stethoscope" class="w-4 h-4 text-sky-600"></i>
+                        <span>1. 临床科室智能小结与常用短语库</span>
+                    </div>
+                    <p class="text-slate-600 leading-relaxed">
+                        内科、外科、眼科、耳鼻喉等科室，录入小项后支持<b>快速生成科室小结</b>：
+                    </p>
+                    <div class="space-y-2">
+                        <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                            <b>一键全正常</b>：所有指标正常时，自动填入“心肺腹未见明显异常”或“未见异常”，将 `gxsfyc` 标记为 0。
+                        </div>
+                        <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                            <b>异常自动提取小结</b>：勾选阳性体征（如“窦性心动过速”），自动提取为诊断小结，将 `gxsfyc` 标记为 1（异常），并自动带出该诊断对应的健康指导建议。
+                        </div>
+                        <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                            <b>科室暂存与封单</b>：录入完毕点击“本科室完成”，锁定本科室数据，防止其他工位误修改。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 医技与检验仪器自动化判定 -->
+                <div class="glass-card p-5 rounded-2xl space-y-3">
+                    <div class="flex items-center gap-2 font-bold text-teal-800 text-sm">
+                        <i data-lucide="activity" class="w-4 h-4 text-teal-600"></i>
+                        <span>2. 医技检验自动化计算与参考值范围</span>
+                    </div>
+                    <p class="text-slate-600 leading-relaxed">
+                        检验科（LIS）、心电图及设备数据的自动化解析：
+                    </p>
+                    <div class="space-y-2">
+                        <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                            <b>多维度参考值动态比对</b>：根据体检者的<b>性别、年龄段</b>自动匹配参考值区间（如男性与女性血红蛋白正常值范围不同）。
+                        </div>
+                        <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                            <b>危机值自动预警</b>：检测到极度异常指标（如血糖 &gt; 20 mmol/L 或严重贫血），系统即时标红警示并自动生成危机值通知单。
+                        </div>
+                        <div class="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
+                            <b>计算公式与衍生指标</b>：支持公式自动化计算（如通过身高体重自动算 BMI、肾小球滤过率 eGFR 计算等）。
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 5: 总检决策引擎 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-5" id="slide-4">
+            <div class="border-b border-slate-200 pb-3">
+                <span class="text-xs font-mono font-bold text-sky-600 uppercase tracking-wider">COMPLETE INSPECTION ENGINE</span>
+                <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">总检智能决策引擎：综述建议生成与参数控制体系</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs">
+                <!-- 1. 自动汇总机制 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-sky-800 text-sm mb-2.5">
+                            <i data-lucide="filter" class="w-4 h-4 text-sky-600"></i>
+                            <span>1. 阳性异常汇总策略</span>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed mb-3">
+                            总检医生打开人员时，系统自动扫描所有已完成科室的 `pe_tjxmxq_zdxj`：
+                        </p>
+                        <div class="space-y-2">
+                            <div class="p-2 bg-sky-50 rounded border border-sky-200">
+                                <b>异常过滤</b>：按 `gxsfyc=1` 筛选所有异常指标，自动剔除“未见异常”等正常项目。
+                            </div>
+                            <div class="p-2 bg-sky-50 rounded border border-sky-200">
+                                <b>跨科室互斥与归并</b>：例如心电图与内科均有心动过速时，智能合并或按权重保留。
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-sky-800 font-mono bg-sky-50 p-2 rounded">
+                        数据来源: pe_tjxmxq_zdxj
+                    </div>
+                </div>
+
+                <!-- 2. 四大核心规则配置 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-indigo-800 text-sm mb-2.5">
+                            <i data-lucide="sliders" class="w-4 h-4 text-indigo-600"></i>
+                            <span>2. 系统核心总检参数配置 (`PE_XTCS_CSSZ`)</span>
+                        </div>
+                        <div class="space-y-2 font-mono">
+                            <div class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <span class="text-indigo-700 font-bold">总检综述是否只显示异常</span>
+                                <div class="text-[11px] text-slate-500">控制是否将 gxsfyc=0 的正常项排除在综述外。</div>
+                            </div>
+                            <div class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <span class="text-indigo-700 font-bold">分检无建议是否填充综述到建议</span>
+                                <div class="text-[11px] text-slate-500">科室只填了诊断未填建议时，自动用综述填充建议。</div>
+                            </div>
+                            <div class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <span class="text-indigo-700 font-bold">总检建议显示项目名</span>
+                                <div class="text-[11px] text-slate-500">输出建议时前置显示【项目名称】。</div>
+                            </div>
+                            <div class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <span class="text-indigo-700 font-bold">总检合并异常</span>
+                                <div class="text-[11px] text-slate-500">多条异常建议合并成段或独立成行输出。</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-[11px] text-indigo-800 font-mono bg-indigo-50 p-2 rounded">
+                        表: PE_XTCS_CSSZ
+                    </div>
+                </div>
+
+                <!-- 3. 总检封单与电子签名 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-teal-800 text-sm mb-2.5">
+                            <i data-lucide="award" class="w-4 h-4 text-teal-600"></i>
+                            <span>3. 主检审核与电子签名加盖</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>总检完成封锁</b>：总检审核通过后，置 `pe_grtjgcjjg.tjzt = 8`，所有分检科室变为只读，防止结果被篡改。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>电子手签自动关联</b>：读取审核医生工号绑定的签名高清透明图片（`image/qm/`），渲染到报告尾页。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>总检撤销机制</b>：如需修改必须主管医师执行“撤销总检”，保留修改审计日志。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-teal-800 font-mono bg-teal-50 p-2 rounded">
+                        表: pe_tjzjshjl (总检记录)
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 6: 报表微服务与渲染底层 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-5" id="slide-5">
+            <div class="border-b border-slate-200 pb-3">
+                <span class="text-xs font-mono font-bold text-sky-600 uppercase tracking-wider">REPORT PLATFORM MICROSERVICE</span>
+                <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">报表微服务：.NET 10 + FastReport 渲染引擎底层架构</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs">
+                <!-- 1. 服务端架构 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-sky-800 text-sm mb-2.5">
+                            <i data-lucide="cpu" class="w-4 h-4 text-sky-600"></i>
+                            <span>1. .NET 10 高性能微服务</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>绿色便携免安装</b>：独立分发（Self-Contained），不需要目标服务器装 .NET 环境与 IIS。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>100% 接口全兼容</b>：向下无缝兼容 Java 调用的 `/BaseInfo/Report/GetReportByJson` 接口。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>内存池与高并发</b>：采用内存流（MemoryStream）生成 PDF，零临时垃圾文件堆积。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-sky-800 font-mono bg-sky-50 p-2 rounded">
+                        工程: PEIS.ReportPlatform
+                    </div>
+                </div>
+
+                <!-- 2. FRX 模板与多数据集 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-indigo-800 text-sm mb-2.5">
+                            <i data-lucide="file-code" class="w-4 h-4 text-indigo-600"></i>
+                            <span>2. FRX 模板机制与多子表查询</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>存储表</b>：`dbo.xt_bgdy_djwh_zzj`，Base64 编码存放 FRX XML。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>主子数据集聚合</b>：以 `jktjbbd_1` ~ `_N` 命名的多条 SQL 自动组装成多表 DataSet 注入模板。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>动态多媒体</b>：超声彩超图谱通过 HTTP URL 或 Base64 实时渲染至报告中。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-indigo-800 font-mono bg-indigo-50 p-2 rounded">
+                        表: xt_bgdy_djwh_zzj (54+模板)
+                    </div>
+                </div>
+
+                <!-- 3. 磁盘落地与秒开 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-teal-800 text-sm mb-2.5">
+                            <i data-lucide="hard-drive" class="w-4 h-4 text-teal-600"></i>
+                            <span>3. 报告存储与秒开机制</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>物理路径</b>：`E:\resourceFile\tjPdf\{yyyy-MM-dd}\{filename}.pdf`。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>数据库记录</b>：`pe_grtjgcjjg.bgurl`。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>秒开原则</b>：文件存在直接读磁盘返回（几毫秒）；重新总检自动删除旧文件并重新生成。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-teal-800 font-mono bg-teal-50 p-2 rounded">
+                        配置: file.path: E:/resourceFile/
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 7: 集成打印与工作站 Agent ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-5" id="slide-6">
+            <div class="border-b border-slate-200 pb-3">
+                <span class="text-xs font-mono font-bold text-sky-600 uppercase tracking-wider">PRINT AGENT & ROUTING</span>
+                <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">集成打印：单据类型智能分流与工作站 PrintAgent</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                <!-- 智能分流记忆 -->
+                <div class="glass-card p-5 rounded-2xl space-y-3">
+                    <div class="flex items-center gap-2 font-bold text-sky-800 text-sm">
+                        <i data-lucide="bookmark-check" class="w-4 h-4 text-sky-600"></i>
+                        <span>1. 解决医院错打/废纸痛点：按单据类型（djid）记忆设备</span>
+                    </div>
+                    <p class="text-slate-600 leading-relaxed">
+                        一个体检科室往往同时连接条码机、普通 A4 激光机和彩色双面报告机。新 Agent 在每台工位本地维护映射关系：
+                    </p>
+                    <div class="space-y-2 font-mono">
+                        <div class="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                            <span class="font-bold text-purple-800">xmtm (采血条码)</span>
+                            <span class="text-slate-400">➔</span>
+                            <span class="text-emerald-700 font-bold">Zebra / 得力条码标签机</span>
+                        </div>
+                        <div class="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                            <span class="font-bold text-purple-800">tjdjd (体检登记单)</span>
+                            <span class="text-slate-400">➔</span>
+                            <span class="text-sky-700 font-bold">HP LaserJet A4 黑白激光机</span>
+                        </div>
+                        <div class="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                            <span class="font-bold text-purple-800">jktjbbd (体检总报告)</span>
+                            <span class="text-slate-400">➔</span>
+                            <span class="text-blue-700 font-bold">Canon 高速彩色双面机</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 静默打印内核与无感分发 -->
+                <div class="glass-card p-5 rounded-2xl space-y-3">
+                    <div class="flex items-center gap-2 font-bold text-teal-800 text-sm">
+                        <i data-lucide="zap" class="w-4 h-4 text-teal-600"></i>
+                        <span>2. SumatraPDF 物理静默引擎与 IP 自动寻址</span>
+                    </div>
+                    <ul class="space-y-2 text-slate-600 leading-relaxed">
+                        <li class="p-2.5 bg-slate-50 rounded border border-slate-200">
+                            <b>SumatraPDF 内核静默直出</b>：绕过 Windows 弹窗与浏览器打印控件，命令直达 Spool 驱动后台，零弹窗、不卡界面。
+                        </li>
+                        <li class="p-2.5 bg-slate-50 rounded border border-slate-200">
+                            <b>WebView2 高清置顶预览</b>：预览模式下调起本地硬件加速预览窗口，支持翻页、缩放与另存为。
+                        </li>
+                        <li class="p-2.5 bg-slate-50 rounded border border-slate-200">
+                            <b>IP 自动智能匹配</b>：前端只发指令，ReportApi 根据客户端 IP 自动匹配当前在线工位 Agent，前端与 Java 零感知。
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 8: 外部系统接口与协同生态 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-5" id="slide-7">
+            <div class="border-b border-slate-200 pb-3">
+                <span class="text-xs font-mono font-bold text-sky-600 uppercase tracking-wider">INTERFACE & ECOSYSTEM</span>
+                <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">外部系统对接生态：LIS / PACS / HIS / 自助机与排队叫号</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+                <!-- LIS -->
+                <div class="glass-card p-4 rounded-xl border-blue-100 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-1.5 font-bold text-blue-900 text-sm mb-2">
+                            <i data-lucide="test-tube-2" class="w-4 h-4 text-blue-600"></i>
+                            <span>LIS 检验接口</span>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">
+                            • <b>条码双向通讯</b>：体检条码扫码后 LIS 识别样本信息；<br>
+                            • <b>结果自动回传</b>：血常规、生化、免疫指标数值与高低箭头实时写入 `pe_tjxmxq`。
+                        </p>
+                    </div>
+                    <div class="text-[11px] text-blue-700 bg-blue-50 p-1.5 rounded mt-2">协议: 视图/中间库/WebAPI</div>
+                </div>
+
+                <!-- PACS -->
+                <div class="glass-card p-4 rounded-xl border-indigo-100 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-1.5 font-bold text-indigo-900 text-sm mb-2">
+                            <i data-lucide="image" class="w-4 h-4 text-indigo-600"></i>
+                            <span>PACS 影像接口</span>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">
+                            • <b>放射/超声图文</b>：获取 DR、CT、B超影像描述与诊断结论；<br>
+                            • <b>高清图片提取</b>：拉取关键影像图谱，动态合并入体检报告对应章节。
+                        </p>
+                    </div>
+                    <div class="text-[11px] text-indigo-700 bg-indigo-50 p-1.5 rounded mt-2">格式: DICOM / HTTP JPG</div>
+                </div>
+
+                <!-- HIS -->
+                <div class="glass-card p-4 rounded-xl border-teal-100 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-1.5 font-bold text-teal-900 text-sm mb-2">
+                            <i data-lucide="landmark" class="w-4 h-4 text-teal-600"></i>
+                            <span>HIS 计费接口</span>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">
+                            • <b>个人自费结算</b>：体检开单后同步至 HIS 门诊收费处或刷医保卡结算；<br>
+                            • <b>退费冲正</b>：弃检项目向 HIS 发起撤回退款通知。
+                        </p>
+                    </div>
+                    <div class="text-[11px] text-teal-700 bg-teal-50 p-1.5 rounded mt-2">支持: 东软/卫宁/创业等HIS</div>
+                </div>
+
+                <!-- 自助机与排队 -->
+                <div class="glass-card p-4 rounded-xl border-emerald-100 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-1.5 font-bold text-emerald-900 text-sm mb-2">
+                            <i data-lucide="smartphone" class="w-4 h-4 text-emerald-600"></i>
+                            <span>自助机与智能排队</span>
+                        </div>
+                        <p class="text-slate-600 leading-relaxed">
+                            • <b>自助终端</b>：刷身份证自助签到、打印导检单与报告；<br>
+                            • <b>智能导检排队</b>：动态计算各科室拥堵指数，指引体检者先去人少科室。
+                        </p>
+                    </div>
+                    <div class="text-[11px] text-emerald-700 bg-emerald-50 p-1.5 rounded mt-2">模块: HYcSelfService / HQueuing</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 9: 团检、职业病与健康证 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-5" id="slide-8">
+            <div class="border-b border-slate-200 pb-3">
+                <span class="text-xs font-mono font-bold text-sky-600 uppercase tracking-wider">SPECIALIZED SCENARIOS</span>
+                <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">特色业务场景：团体体检批量管理、职业病监护与健康证</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 text-xs">
+                <!-- 团检管理 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-sky-800 text-sm mb-2.5">
+                            <i data-lucide="users" class="w-4 h-4 text-sky-600"></i>
+                            <span>1. 团体体检全生命周期管理</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>Excel 批量导入名单</b>：百人/千人名单一键解析，自动校验身份证并匹配部门套餐。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>团检进度看板</b>：实时监控参检率、已检/未检人数、未到人员短信催检。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>团体综合分析报告</b>：自动生成高血压/高血脂/脂肪肝企业阳性率图表。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-sky-800 font-mono bg-sky-50 p-2 rounded">
+                        服务: GroupInspectionManageService
+                    </div>
+                </div>
+
+                <!-- 职业健康监护 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-amber-800 text-sm mb-2.5">
+                            <i data-lucide="shield" class="w-4 h-4 text-amber-600"></i>
+                            <span>2. 职业健康监护体系</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>危害因素绑定</b>：上岗前、在岗期间、离岗时等不同监护类别的危害因素匹配。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>职业病评价结论</b>：未见异常、复查、职业禁忌证、疑似职业病。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>告知单与监护档案</b>：一键打印复查告知单与规范化监护档案。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-amber-800 font-mono bg-amber-50 p-2 rounded">
+                        服务: OccupationalGroupInspection
+                    </div>
+                </div>
+
+                <!-- 从业人员健康证明 -->
+                <div class="glass-card p-5 rounded-2xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 font-bold text-teal-800 text-sm mb-2.5">
+                            <i data-lucide="badge-check" class="w-4 h-4 text-teal-600"></i>
+                            <span>3. 从业人员健康证明 (健康证)</span>
+                        </div>
+                        <ul class="space-y-2 text-slate-600 leading-relaxed">
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>全项合格校验</b>：肠道菌（沙门/志贺氏菌）、胸透、甲肝戊肝全部合格后方可制证。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>头像与二维码合成</b>：动态合成个人免冠照与防伪查询二维码。
+                            </li>
+                            <li class="p-2 bg-slate-50 rounded border border-slate-200">
+                                <b>有效期到期提醒</b>：1 年有效期自动计算，支持批量卡证制作与发放。
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="text-[11px] text-teal-800 font-mono bg-teal-50 p-2 rounded">
+                        服务: HealthCertificateService
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 10: 实施与售后必备 SQL 工具箱 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-4" id="slide-9">
+            <div class="border-b border-slate-200 pb-2.5 flex items-center justify-between">
+                <div>
+                    <span class="text-xs font-mono font-bold text-emerald-600 uppercase tracking-wider">SQL TOOLKIT FOR OPS & SUPPORT</span>
+                    <h2 class="text-2xl font-extrabold text-slate-900 mt-0.5">实施与售后运维高频实用 SQL 工具箱</h2>
+                </div>
+                <span class="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold">快速排查 · 模板调试 · 状态维护</span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                
+                <!-- SQL 1: 人员及报告状态快速定位 -->
+                <div class="sql-card p-3.5 rounded-xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between text-sky-400 font-bold mb-1.5">
+                            <span class="flex items-center gap-1.5"><i data-lucide="search" class="w-3.5 h-3.5"></i> 1. 人员与报告生成/打印状态全字段排查</span>
+                            <span class="text-[10px] text-slate-400 font-mono">排查体检进度</span>
+                        </div>
+                        <pre class="code-font text-[11px] text-sky-200 overflow-x-auto p-2 bg-slate-950 rounded border border-slate-800"><span class="text-purple-400">SELECT</span> 
+    g.grtjgcjjgid, r.xm, r.xb, r.sfzh, g.tjbh,
+    g.tjzt,         <span class="text-slate-500">-- 体检状态(8为已总检)</span>
+    g.bgsczt,       <span class="text-slate-500">-- 报告生成状态(0未生成 1已生成)</span>
+    g.bgurl,        <span class="text-slate-500">-- 磁盘落地路径</span>
+    d.dycs, d.dysj  <span class="text-slate-500">-- 打印次数与最后打印时间</span>
+<span class="text-purple-400">FROM</span> pe_grtjgcjjg g <span class="text-slate-400">WITH(NOLOCK)</span>
+<span class="text-purple-400">INNER JOIN</span> pe_tjryxx r <span class="text-slate-400">ON</span> g.tjryid = r.tjryid
+<span class="text-purple-400">LEFT JOIN</span> pe_tj_bgdyjl d <span class="text-slate-400">ON</span> g.grtjgcjjgid = d.grtjgcjjgid
+<span class="text-purple-400">WHERE</span> r.xm = <span class="text-amber-300">'邓鹏宇'</span> <span class="text-purple-400">OR</span> g.tjbh = <span class="text-amber-300">'2026090001'</span>;</pre>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1.5">
+                        💡 <b>用途</b>：客户说“报告打不出”或“找不到人”时，一眼看清是未总检、未生成还是路径丢失。
+                    </div>
+                </div>
+
+                <!-- SQL 2: 报表模板 FRX 与 SQL 提取 -->
+                <div class="sql-card p-3.5 rounded-xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between text-teal-400 font-bold mb-1.5">
+                            <span class="flex items-center gap-1.5"><i data-lucide="file-code" class="w-3.5 h-3.5"></i> 2. 报表模板 (FRX Base64) 与主子查询 SQL 提取</span>
+                            <span class="text-[10px] text-slate-400 font-mono">报表排错</span>
+                        </div>
+                        <pre class="code-font text-[11px] text-teal-200 overflow-x-auto p-2 bg-slate-950 rounded border border-slate-800"><span class="text-slate-500">-- 提取某个报表（主表及附属子查询）</span>
+<span class="text-purple-400">SELECT</span> djid, djmc, xh, djsql, 
+       <span class="text-purple-400">LEN</span>(dj_frx) <span class="text-purple-400">AS</span> frx_length,
+       dj_frx <span class="text-slate-500">-- Base64 编码的 FRX 模板内容</span>
+<span class="text-purple-400">FROM</span> xt_bgdy_djwh_zzj <span class="text-slate-400">WITH(NOLOCK)</span>
+<span class="text-purple-400">WHERE</span> djid = <span class="text-amber-300">'jktjbbd'</span> <span class="text-purple-400">OR</span> djid <span class="text-purple-400">LIKE</span> <span class="text-amber-300">'jktjbbd[_]%'</span>
+<span class="text-purple-400">ORDER BY</span> xh, djid;</pre>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1.5">
+                        💡 <b>用途</b>：排查报告模板数据源报错、字段缺失或自定义修改 SQL 取数逻辑。
+                    </div>
+                </div>
+
+                <!-- SQL 3: 强制重置报告生成状态与重新总检 -->
+                <div class="sql-card p-3.5 rounded-xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between text-amber-400 font-bold mb-1.5">
+                            <span class="flex items-center gap-1.5"><i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> 3. 强制清空旧报告缓存（支持重新生成）</span>
+                            <span class="text-[10px] text-slate-400 font-mono">报告重新生成</span>
+                        </div>
+                        <pre class="code-font text-[11px] text-amber-200 overflow-x-auto p-2 bg-slate-950 rounded border border-slate-800"><span class="text-slate-500">-- 清除指定人员已生成状态，强制下次请求重新触发渲染</span>
+<span class="text-purple-400">UPDATE</span> pe_grtjgcjjg 
+<span class="text-purple-400">SET</span> bgsczt = <span class="text-emerald-400">'0'</span>, bgurl = <span class="text-purple-400">NULL</span> 
+<span class="text-purple-400">WHERE</span> grtjgcjjgid = <span class="text-amber-300">'A5C0C3C57D99488E8B06D67677263B44'</span>;
+
+<span class="text-slate-500">-- 清除打印次数加锁限制（允许重新打印）</span>
+<span class="text-purple-400">UPDATE</span> pe_tj_bgdyjl 
+<span class="text-purple-400">SET</span> dycs = <span class="text-emerald-400">0</span> 
+<span class="text-purple-400">WHERE</span> grtjgcjjgid = <span class="text-amber-300">'A5C0C3C57D99488E8B06D67677263B44'</span>;</pre>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1.5">
+                        💡 <b>用途</b>：医生修改结论后报告未刷新，或打印达到上限被锁定时一键重置。
+                    </div>
+                </div>
+
+                <!-- SQL 4: 科室分检结果与总检建议参数排查 -->
+                <div class="sql-card p-3.5 rounded-xl flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between text-emerald-400 font-bold mb-1.5">
+                            <span class="flex items-center gap-1.5"><i data-lucide="activity" class="w-3.5 h-3.5"></i> 4. 检查人员分检小结、异常标识与总检综述</span>
+                            <span class="text-[10px] text-slate-400 font-mono">分检与总检排查</span>
+                        </div>
+                        <pre class="code-font text-[11px] text-emerald-200 overflow-x-auto p-2 bg-slate-950 rounded border border-slate-800"><span class="text-purple-400">SELECT</span> 
+    a.xmmc, a.jczt, b.tjxmxj, b.tjjy, 
+    b.gxsfyc <span class="text-slate-500">-- 1为异常，0为正常</span>
+<span class="text-purple-400">FROM</span> pe_tjxmxq a <span class="text-slate-400">WITH(NOLOCK)</span>
+<span class="text-purple-400">LEFT JOIN</span> pe_tjxmxq_zdxj b <span class="text-slate-400">ON</span> a.tjxqid = b.tjxqid
+<span class="text-purple-400">WHERE</span> a.grtjgcjjgid = <span class="text-amber-300">'A5C0C3C57D99488E8B06D67677263B44'</span> 
+  <span class="text-purple-400">AND</span> a.deleted != <span class="text-emerald-400">1</span>;</pre>
+                    </div>
+                    <div class="text-[10px] text-slate-400 mt-1.5">
+                        💡 <b>用途</b>：排查“总检综述为什么没带出来”、“分检无建议是否填充”及异常过滤问题。
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </main>
+
+    <!-- 底部控制栏 -->
+    <footer class="h-14 glass-nav px-6 flex items-center justify-between z-50 flex-shrink-0 shadow-inner">
+        <div class="flex items-center space-x-4 text-xs text-slate-500 font-medium">
+            <span class="flex items-center gap-1.5"><kbd class="px-2 py-0.5 rounded bg-white border border-slate-300 text-slate-700 font-mono shadow-sm">←</kbd> <kbd class="px-2 py-0.5 rounded bg-white border border-slate-300 text-slate-700 font-mono shadow-sm">→</kbd> 翻页</span>
+            <span class="hidden md:inline text-slate-300">|</span>
+            <span class="hidden md:flex items-center gap-1.5"><kbd class="px-2 py-0.5 rounded bg-white border border-slate-300 text-slate-700 font-mono shadow-sm">F</kbd> 全屏演示</span>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <button onclick="prevSlide()" class="px-4 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm">
+                <i data-lucide="chevron-left" class="w-4 h-4"></i> 上一页
+            </button>
+            <button onclick="nextSlide()" class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-sky-600 to-teal-600 hover:from-sky-500 hover:to-teal-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-md shadow-sky-500/20">
+                下一页 <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        // 初始化 Lucide 图标
+        lucide.createIcons();
+
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const navDots = document.querySelectorAll('.nav-dot');
+        const slideCounter = document.getElementById('slide-counter');
+        const totalSlides = slides.length;
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                } else {
+                    slide.classList.remove('active');
+                }
+            });
+
+            // 更新导航高亮
+            navDots.forEach((btn, index) => {
+                if (index === currentSlide) {
+                    btn.className = "nav-dot px-2.5 py-1 rounded-full text-xs font-bold transition-all bg-gradient-to-r from-sky-600 to-teal-600 text-white shadow-sm";
+                } else {
+                    btn.className = "nav-dot px-2.5 py-1 rounded-full text-xs font-medium transition-all text-slate-600 hover:text-slate-900";
+                }
+            });
+
+            slideCounter.textContent = `${currentSlide + 1} / ${totalSlides}`;
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                currentSlide++;
+                updateSlide();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateSlide();
+            }
+        }
+
+        function goToSlide(index) {
+            if (index >= 0 && index < totalSlides) {
+                currentSlide = index;
+                updateSlide();
+            }
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`无法进入全屏: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        // 键盘翻页监听
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+                nextSlide();
+            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                prevSlide();
+            } else if (e.key === 'f' || e.key === 'F') {
+                toggleFullScreen();
+            }
+        });
+
+        // 初始化
+        updateSlide();
+    </script>
+</body>
+</html>

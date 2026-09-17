@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PEIS 智能报表引擎与工作站集成打印系统 - 架构全景解析</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@300;400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+        body {
+            font-family: 'Noto Sans SC', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #0B0F19;
+            color: #F3F4F6;
+            overflow-x: hidden;
+        }
+
+        .code-font {
+            font-family: 'Fira Code', monospace;
+        }
+
+        /* Neon Glow Effects */
+        .glow-cyan {
+            box-shadow: 0 0 35px -5px rgba(6, 182, 212, 0.35);
+        }
+        .glow-blue {
+            box-shadow: 0 0 35px -5px rgba(59, 130, 246, 0.35);
+        }
+        .glow-purple {
+            box-shadow: 0 0 35px -5px rgba(168, 85, 247, 0.35);
+        }
+        .glow-emerald {
+            box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.35);
+        }
+
+        /* Gradient Text */
+        .text-gradient-cyan {
+            background: linear-gradient(135deg, #38BDF8 0%, #06B6D4 50%, #10B981 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .text-gradient-purple {
+            background: linear-gradient(135deg, #C084FC 0%, #818CF8 50%, #38BDF8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .text-gradient-amber {
+            background: linear-gradient(135deg, #FDE047 0%, #F59E0B 50%, #EF4444 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(17, 24, 39, 0.75);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .glass-card {
+            background: rgba(31, 41, 55, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-card:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px -10px rgba(6, 182, 212, 0.2);
+        }
+
+        /* Slide Styles */
+        .slide {
+            display: none;
+            opacity: 0;
+            transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out;
+            transform: scale(0.98);
+            min-height: calc(100vh - 120px);
+        }
+        .slide.active {
+            display: flex;
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
+
+        /* Animated Grid Background */
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        }
+
+        /* Pulse keyframe */
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.6; filter: drop-shadow(0 0 8px rgba(6, 182, 212, 0.6)); }
+            50% { opacity: 1; filter: drop-shadow(0 0 18px rgba(6, 182, 212, 0.9)); }
+        }
+        .animate-pulse-glow {
+            animation: pulse-glow 3s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-[#0B0F19] text-slate-100 flex flex-col h-screen select-none bg-grid">
+
+    <!-- Top Navigation & Presentation Header -->
+    <header class="h-16 border-b border-slate-800/80 glass-panel px-6 flex items-center justify-between z-50 flex-shrink-0">
+        <div class="flex items-center space-x-3">
+            <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/30">
+                <i data-lucide="printer" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-base tracking-wide flex items-center gap-2">
+                    <span class="text-gradient-cyan font-black">PEIS 报表与集成打印系统</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-mono">v3.0 Architecture</span>
+                </h1>
+            </div>
+        </div>
+
+        <!-- Slide Indicators -->
+        <div class="hidden md:flex items-center space-x-1.5 bg-slate-900/80 px-3 py-1.5 rounded-full border border-slate-800">
+            <button onclick="goToSlide(0)" class="nav-dot px-3 py-1 rounded-full text-xs font-medium transition-all text-slate-400 hover:text-white" data-index="0">1. 综述与背景</button>
+            <button onclick="goToSlide(1)" class="nav-dot px-3 py-1 rounded-full text-xs font-medium transition-all text-slate-400 hover:text-white" data-index="1">2. 痛点与革新</button>
+            <button onclick="goToSlide(2)" class="nav-dot px-3 py-1 rounded-full text-xs font-medium transition-all text-slate-400 hover:text-white" data-index="2">3. 架构与全景时序</button>
+            <button onclick="goToSlide(3)" class="nav-dot px-3 py-1 rounded-full text-xs font-medium transition-all text-slate-400 hover:text-white" data-index="3">4. 模板底层原理(FRX)</button>
+            <button onclick="goToSlide(4)" class="nav-dot px-3 py-1 rounded-full text-xs font-medium transition-all text-slate-400 hover:text-white" data-index="4">5. 打印机智能记忆路由</button>
+            <button onclick="goToSlide(5)" class="nav-dot px-3 py-1 rounded-full text-xs font-medium transition-all text-slate-400 hover:text-white" data-index="5">6. 部署实施与运维</button>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <button id="btn-fullscreen" onclick="toggleFullScreen()" class="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition">
+                <i data-lucide="maximize" class="w-4 h-4"></i>
+            </button>
+            <div class="text-xs font-mono text-slate-400 bg-slate-900 px-2.5 py-1.5 rounded border border-slate-800" id="slide-counter">
+                1 / 6
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Slide Viewport -->
+    <main class="flex-1 overflow-y-auto p-4 md:p-8 flex items-center justify-center relative">
+
+        <!-- ==================== SLIDE 1: 封面 / 总体概述 ==================== -->
+        <section class="slide active w-full max-w-7xl flex-col justify-center items-center text-center space-y-8" id="slide-0">
+            <div class="inline-flex items-center space-x-2 px-4 py-1.5 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-cyan-400 text-sm font-medium animate-pulse-glow">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                <span>全新现代化医疗体检报表微服务与工作站硬件协同架构</span>
+            </div>
+
+            <div class="space-y-4 max-w-4xl">
+                <h1 class="text-4xl md:text-6xl font-black tracking-tight leading-tight">
+                    体检信息系统 <span class="text-gradient-cyan">报表引擎与工作站集成打印</span> 全景解析
+                </h1>
+                <p class="text-slate-400 text-lg md:text-xl font-normal leading-relaxed">
+                    解耦传统 IIS 宿主限制，实现 50+ 套 FRX 报表 100% 无缝兼容、单据类型打印机本地智能记忆、毫秒级静默出纸与高清预览。
+                </p>
+            </div>
+
+            <!-- 4 大核心支柱 -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-5 w-full text-left pt-6">
+                <div class="glass-card p-5 rounded-2xl border-cyan-500/20 glow-cyan">
+                    <div class="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mb-3">
+                        <i data-lucide="layers" class="w-5 h-5"></i>
+                    </div>
+                    <h3 class="font-bold text-lg text-white mb-1">.NET 10 独立引擎</h3>
+                    <p class="text-xs text-slate-400 leading-relaxed">彻底摆脱 IIS 容器约束，绿色免安装跨环境独立部署，性能提升数倍。</p>
+                </div>
+                <div class="glass-card p-5 rounded-2xl border-blue-500/20 glow-blue">
+                    <div class="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center mb-3">
+                        <i data-lucide="file-code-2" class="w-5 h-5"></i>
+                    </div>
+                    <h3 class="font-bold text-lg text-white mb-1">FRX 模板全兼容</h3>
+                    <p class="text-xs text-slate-400 leading-relaxed">基于数据库 Base64 模板解析，54+ 种体检单据、主子多数据集无需二次开发。</p>
+                </div>
+                <div class="glass-card p-5 rounded-2xl border-purple-500/20 glow-purple">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center mb-3">
+                        <i data-lucide="route" class="w-5 h-5"></i>
+                    </div>
+                    <h3 class="font-bold text-lg text-white mb-1">IP 智能寻址分发</h3>
+                    <p class="text-xs text-slate-400 leading-relaxed">前端与 Java 零感知物理硬件，依客户端 IP 毫秒级精准路由推送到工位 Agent。</p>
+                </div>
+                <div class="glass-card p-5 rounded-2xl border-emerald-500/20 glow-emerald">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-3">
+                        <i data-lucide="cpu" class="w-5 h-5"></i>
+                    </div>
+                    <h3 class="font-bold text-lg text-white mb-1">单据打印机记忆</h3>
+                    <p class="text-xs text-slate-400 leading-relaxed">按单据类型（条码/登记单/个检）本地绑定物理设备，内置内核静默出纸。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 2: 方案对比与痛点革新 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-6" id="slide-1">
+            <div class="border-b border-slate-800 pb-4">
+                <span class="text-xs font-mono text-cyan-400 uppercase tracking-widest">EVOLUTION & COMPARISON</span>
+                <h2 class="text-3xl font-extrabold text-white mt-1">架构演进：以前的困境 vs 现在的革新</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- 旧架构痛点 -->
+                <div class="glass-panel p-6 rounded-2xl border-red-500/20 relative overflow-hidden">
+                    <div class="absolute -right-10 -top-10 w-40 h-40 bg-red-500/5 rounded-full blur-3xl"></div>
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-bold text-red-400 flex items-center gap-2">
+                            <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+                            以往旧模式痛点 (Legacy)
+                        </h3>
+                        <span class="text-xs bg-red-500/10 text-red-400 px-2.5 py-1 rounded-full border border-red-500/20">旧 IIS 方案</span>
+                    </div>
+
+                    <div class="space-y-4 text-sm text-slate-300">
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3">
+                            <i data-lucide="x-circle" class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="font-bold text-white">IIS 强依赖与死锁崩溃风险</p>
+                                <p class="text-xs text-slate-400 mt-1">原报表服务寄宿在 IIS 中，并发高时容易出现应用程序池卡死，部署依赖复杂环境。</p>
+                            </div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3">
+                            <i data-lucide="x-circle" class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="font-bold text-white">浏览器打印体验割裂、无法静默</p>
+                                <p class="text-xs text-slate-400 mt-1">必须在浏览器中弹出 PDF 窗口，由护士/医生每次手动选择打印机并点击确定，效率低下且容易选错。</p>
+                            </div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3">
+                            <i data-lucide="x-circle" class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="font-bold text-white">多硬件（条码机/A4/双面）无法分流</p>
+                                <p class="text-xs text-slate-400 mt-1">打完体检条码接着打体检报告时，浏览器始终记住上次的标签机，导致 A4 纸经常打在条码机上废纸。</p>
+                            </div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3">
+                            <i data-lucide="x-circle" class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="font-bold text-white">模板排错极为隐蔽</p>
+                                <p class="text-xs text-slate-400 mt-1">FRX 模板 Base64 嵌在数据库中，字段映射与多子表查询没有标准化调试工具与日志跟踪。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 现在新方案优势 -->
+                <div class="glass-panel p-6 rounded-2xl border-emerald-500/20 relative overflow-hidden">
+                    <div class="absolute -right-10 -top-10 w-40 h-40 bg-emerald-500/5 rounded-full blur-3xl"></div>
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-bold text-emerald-400 flex items-center gap-2">
+                            <i data-lucide="check-circle-2" class="w-5 h-5"></i>
+                            全新集成打印方案 (Modern)
+                        </h3>
+                        <span class="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/20">.NET 10 + Agent</span>
+                    </div>
+
+                    <div class="space-y-4 text-sm text-slate-300">
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="font-bold text-white">独立微服务 & 100% 绿色便携</p>
+                                <p class="text-xs text-slate-400 mt-1">基于 .NET 10 AOT/独立发布，解压即用无需装运行时，直接以高性能 WebAPI 承载高并发渲染。</p>
+                            </div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="font-bold text-white">工作站智能 Agent 与硬件静默直连</p>
+                                <p class="text-xs text-slate-400 mt-1">内置专用 SumatraPDF 静默引擎 + WebView2 高清硬件加速预览，彻底告别浏览器打印弹窗。</p>
+                            </div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="font-bold text-white">按单据类型（djid）自动记忆分流</p>
+                                <p class="text-xs text-slate-400 mt-1">条码自动走条码机，登记单走普通 A4，个检报告走高速双面机，本地记忆，零人工干预。</p>
+                            </div>
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 flex items-start gap-3">
+                            <i data-lucide="check" class="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5"></i>
+                            <div>
+                                <p class="font-bold text-white">业务无感平滑迁移</p>
+                                <p class="text-xs text-slate-400 mt-1">Java 业务层沿用原有 PDF 拼装与加盖水印逻辑，数据库 54+ 种 FRX 模板不用改动一行代码。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 3: 架构图与全景时序 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-6" id="slide-2">
+            <div class="border-b border-slate-800 pb-4 flex items-center justify-between">
+                <div>
+                    <span class="text-xs font-mono text-cyan-400 uppercase tracking-widest">SYSTEM ARCHITECTURE</span>
+                    <h2 class="text-3xl font-extrabold text-white mt-1">端到端交互拓扑与执行流转</h2>
+                </div>
+                <div class="flex gap-2 text-xs">
+                    <span class="px-2.5 py-1 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">1. 业务触发</span>
+                    <span class="px-2.5 py-1 rounded bg-purple-500/10 text-purple-400 border border-purple-500/30">2. 模板渲染</span>
+                    <span class="px-2.5 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">3. 智能路由</span>
+                    <span class="px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">4. 终端出纸</span>
+                </div>
+            </div>
+
+            <!-- 流程节点图 -->
+            <div class="glass-panel p-6 rounded-2xl border-slate-800 space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 relative">
+                    
+                    <!-- 节点 1 -->
+                    <div class="p-4 rounded-xl bg-slate-900/90 border border-blue-500/30 flex flex-col justify-between relative">
+                        <div class="absolute -top-3 left-4 bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded">STEP 01</div>
+                        <div>
+                            <div class="flex items-center gap-2 text-blue-400 font-bold mb-2 mt-1">
+                                <i data-lucide="monitor" class="w-4 h-4"></i>
+                                <span>前端操作 (Browser)</span>
+                            </div>
+                            <p class="text-xs text-slate-400 leading-relaxed">
+                                医生/护士点击“预览”或“打印”。<br>
+                                <span class="text-slate-300 font-mono">POST /desktopReportDelivery</span><br>
+                                传递参数：体检结果ID、模板ID (djid)。
+                            </p>
+                        </div>
+                        <div class="mt-3 pt-2 border-t border-slate-800 text-[11px] text-cyan-400">
+                            ★ 前端无需知道 Agent 或打印机名
+                        </div>
+                    </div>
+
+                    <!-- 节点 2 -->
+                    <div class="p-4 rounded-xl bg-slate-900/90 border border-purple-500/30 flex flex-col justify-between relative">
+                        <div class="absolute -top-3 left-4 bg-purple-600 text-white text-[10px] font-black px-2 py-0.5 rounded">STEP 02</div>
+                        <div>
+                            <div class="flex items-center gap-2 text-purple-400 font-bold mb-2 mt-1">
+                                <i data-lucide="server" class="w-4 h-4"></i>
+                                <span>Java 业务中枢</span>
+                            </div>
+                            <p class="text-xs text-slate-400 leading-relaxed">
+                                1. 抓取客户端 IP (<code class="text-purple-300">request.getRemoteAddr()</code>)<br>
+                                2. 调用 ReportApi 渲染基础 PDF<br>
+                                3. 执行原有盖章/多单据合并<br>
+                                4. 上传最终 PDF 到投递队列。
+                            </p>
+                        </div>
+                        <div class="mt-3 pt-2 border-t border-slate-800 text-[11px] text-purple-300">
+                            ★ 保留所有复杂业务后处理
+                        </div>
+                    </div>
+
+                    <!-- 节点 3 -->
+                    <div class="p-4 rounded-xl bg-slate-900/90 border border-cyan-500/30 flex flex-col justify-between relative">
+                        <div class="absolute -top-3 left-4 bg-cyan-600 text-white text-[10px] font-black px-2 py-0.5 rounded">STEP 03</div>
+                        <div>
+                            <div class="flex items-center gap-2 text-cyan-400 font-bold mb-2 mt-1">
+                                <i data-lucide="cpu" class="w-4 h-4"></i>
+                                <span>PEIS.ReportApi 核心</span>
+                            </div>
+                            <p class="text-xs text-slate-400 leading-relaxed">
+                                1. 查询 <code class="text-cyan-300">xt_bgdy_djwh_zzj</code> 取 FRX & SQL<br>
+                                2. FastReport 渲染引擎生成流<br>
+                                3. 投递服务按 IP 匹配当前在线的工作站 Agent。
+                            </p>
+                        </div>
+                        <div class="mt-3 pt-2 border-t border-slate-800 text-[11px] text-cyan-300">
+                            ★ 毫秒级 IP 拓扑自动映射
+                        </div>
+                    </div>
+
+                    <!-- 节点 4 -->
+                    <div class="p-4 rounded-xl bg-slate-900/90 border border-emerald-500/30 flex flex-col justify-between relative">
+                        <div class="absolute -top-3 left-4 bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded">STEP 04</div>
+                        <div>
+                            <div class="flex items-center gap-2 text-emerald-400 font-bold mb-2 mt-1">
+                                <i data-lucide="printer" class="w-4 h-4"></i>
+                                <span>PEIS.PrintAgent 终端</span>
+                            </div>
+                            <p class="text-xs text-slate-400 leading-relaxed">
+                                1. 本地工作站托盘拉取 PDF 文件<br>
+                                2. <b>预览</b>：唤起 WebView2 顶层置顶<br>
+                                3. <b>打印</b>：读取本地 djid 打印机记忆，SumatraPDF 静默物理出纸。
+                            </p>
+                        </div>
+                        <div class="mt-3 pt-2 border-t border-slate-800 text-[11px] text-emerald-300">
+                            ★ 零弹窗、自动化无感出纸
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 流程调用时序示意表格 -->
+                <div class="bg-slate-950 p-4 rounded-xl border border-slate-800/80 font-mono text-xs">
+                    <div class="text-slate-400 mb-2 flex items-center gap-2">
+                        <i data-lucide="terminal" class="w-4 h-4 text-cyan-400"></i>
+                        <span>投递协议报文核心数据载荷示例 (JSON Payload)</span>
+                    </div>
+                    <pre class="text-cyan-300 overflow-x-auto"><span class="text-slate-500">// 前端请求体</span>
+{
+  <span class="text-purple-400">"action"</span>: <span class="text-emerald-400">"Print"</span>,             <span class="text-slate-500">// Preview (预览) 或 Print (直接打印)</span>
+  <span class="text-purple-400">"report"</span>: {
+    <span class="text-purple-400">"grtjgcjjgidArr"</span>: [<span class="text-amber-300">"A5C0C3C57D99488E8B06D67677263B44"</span>],
+    <span class="text-purple-400">"templateid"</span>: <span class="text-amber-300">"724071198644850688"</span>, <span class="text-slate-500">// 映射到 FastReport 底层 djid = jktjbbd (个检报告)</span>
+    <span class="text-purple-400">"filename"</span>: <span class="text-amber-300">"邓鹏宇_健康体检报告"</span>
+  }
+}</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 4: 模板底层原理 (FRX) ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-6" id="slide-3">
+            <div class="border-b border-slate-800 pb-4">
+                <span class="text-xs font-mono text-cyan-400 uppercase tracking-widest">DEEP DIVE INTO TEMPLATES</span>
+                <h2 class="text-3xl font-extrabold text-white mt-1">模板底层机制：数据库存储、动态 SQL 与渲染</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- 1. 数据库存储表结构 -->
+                <div class="glass-card p-5 rounded-2xl">
+                    <div class="flex items-center gap-2 text-cyan-400 font-bold mb-3">
+                        <i data-lucide="database" class="w-5 h-5"></i>
+                        <h3>1. 模板表结构 (xt_bgdy_djwh_zzj)</h3>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-3">
+                        所有 54+ 套报表均维护在 SQL Server 统一管理，支持热更新：
+                    </p>
+                    <div class="space-y-2 text-xs font-mono">
+                        <div class="p-2 rounded bg-slate-900 border border-slate-800">
+                            <span class="text-cyan-300 font-bold">djid</span>: <span class="text-slate-400">varchar(20)</span>
+                            <div class="text-[10px] text-slate-500">主键。如 jktjbbd(个检), tjdjd(登记单), xmtm(条码)</div>
+                        </div>
+                        <div class="p-2 rounded bg-slate-900 border border-slate-800">
+                            <span class="text-purple-300 font-bold">dj_frx</span>: <span class="text-slate-400">varchar(max)</span>
+                            <div class="text-[10px] text-slate-500">FastReport XML 模板的 <b>Base64 编码字符串</b></div>
+                        </div>
+                        <div class="p-2 rounded bg-slate-900 border border-slate-800">
+                            <span class="text-emerald-300 font-bold">djsql</span>: <span class="text-slate-400">text</span>
+                            <div class="text-[10px] text-slate-500">参数化取数 SQL（支持存储过程与动态拼接）</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 2. 主从数据集关联机制 -->
+                <div class="glass-card p-5 rounded-2xl">
+                    <div class="flex items-center gap-2 text-purple-400 font-bold mb-3">
+                        <i data-lucide="git-branch" class="w-5 h-5"></i>
+                        <h3>2. 主从多数据集装配</h3>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-3">
+                        单张复杂报表可能包含多个数据集查询，ReportApi 自动进行聚合注入：
+                    </p>
+                    <div class="space-y-2 text-xs">
+                        <div class="p-2.5 rounded bg-slate-900 border border-slate-800">
+                            <p class="font-bold text-white font-mono">主表: djid = 'jktjbbd'</p>
+                            <p class="text-[11px] text-slate-400">输出主数据集 <code class="text-cyan-300">Master</code>（体检人员基本信息、体检号等）。</p>
+                        </div>
+                        <div class="p-2.5 rounded bg-slate-900 border border-slate-800">
+                            <p class="font-bold text-white font-mono">子表: djid = 'jktjbbd_1' ~ '_N'</p>
+                            <p class="text-[11px] text-slate-400">输出科室小结、检验明细、影像图谱等多明细表。</p>
+                        </div>
+                        <div class="p-2.5 rounded bg-slate-900 border border-slate-800">
+                            <p class="font-bold text-white font-mono">多媒体 & 签名</p>
+                            <p class="text-[11px] text-slate-400">支持 HTTP 图片 URL / Base64 签名在 FRX 中动态渲染。</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. 参数替换与防注入 -->
+                <div class="glass-card p-5 rounded-2xl">
+                    <div class="flex items-center gap-2 text-emerald-400 font-bold mb-3">
+                        <i data-lucide="code" class="w-5 h-5"></i>
+                        <h3>3. 核心动态参数映射</h3>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-3">
+                        Java 请求传入 JSON 参数，ReportApi 引擎完成占位符动态绑定：
+                    </p>
+                    <div class="space-y-2 text-xs font-mono">
+                        <div class="p-2 bg-slate-900 rounded border border-slate-800 flex justify-between">
+                            <span class="text-amber-300">@grtjgcjjgid</span>
+                            <span class="text-slate-400">个人体检结果主ID</span>
+                        </div>
+                        <div class="p-2 bg-slate-900 rounded border border-slate-800 flex justify-between">
+                            <span class="text-amber-300">@tjryid</span>
+                            <span class="text-slate-400">体检人员唯一ID</span>
+                        </div>
+                        <div class="p-2 bg-slate-900 rounded border border-slate-800 flex justify-between">
+                            <span class="text-amber-300">@dwtjgcjjgid</span>
+                            <span class="text-slate-400">单位体检结果ID</span>
+                        </div>
+                        <div class="p-2 bg-slate-900 rounded border border-slate-800 flex justify-between">
+                            <span class="text-amber-300">@sfxmddid</span>
+                            <span class="text-slate-400">收费项目大单ID</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 常用模板速查 -->
+            <div class="glass-panel p-4 rounded-xl border-slate-800">
+                <div class="text-xs font-bold text-slate-300 mb-2 flex items-center gap-2">
+                    <i data-lucide="check-check" class="w-4 h-4 text-cyan-400"></i>
+                    <span>已完整验证并兼容的核心模板分类：</span>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    <div class="bg-slate-900/80 p-2 rounded border border-slate-800 flex items-center justify-between">
+                        <span class="text-slate-300">健康体检总报告</span>
+                        <code class="text-cyan-400 font-mono">jktjbbd</code>
+                    </div>
+                    <div class="bg-slate-900/80 p-2 rounded border border-slate-800 flex items-center justify-between">
+                        <span class="text-slate-300">体检登记单 / 导检单</span>
+                        <code class="text-cyan-400 font-mono">tjdjd</code>
+                    </div>
+                    <div class="bg-slate-900/80 p-2 rounded border border-slate-800 flex items-center justify-between">
+                        <span class="text-slate-300">采血 / 项目条码标签</span>
+                        <code class="text-cyan-400 font-mono">xmtm</code>
+                    </div>
+                    <div class="bg-slate-900/80 p-2 rounded border border-slate-800 flex items-center justify-between">
+                        <span class="text-slate-300">职业病 / 团体汇总表</span>
+                        <code class="text-cyan-400 font-mono">zyb_tjbg / dw...</code>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 5: 打印机智能记忆路由 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-6" id="slide-4">
+            <div class="border-b border-slate-800 pb-4">
+                <span class="text-xs font-mono text-cyan-400 uppercase tracking-widest">SMART WORKSTATION ROUTING</span>
+                <h2 class="text-3xl font-extrabold text-white mt-1">工作站 Agent：打印机类型智能记忆与静默引擎</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                <div class="space-y-4">
+                    <div class="glass-card p-5 rounded-2xl border-cyan-500/20">
+                        <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                            <i data-lucide="bookmark-check" class="w-5 h-5 text-cyan-400"></i>
+                            什么是“按单据类型（djid）记忆打印机”？
+                        </h3>
+                        <p class="text-xs text-slate-300 leading-relaxed mb-3">
+                            医院科室通常同时连接多台物理打印设备。传统方案无法分辨是打条码还是打报告。新 Agent 在每台工位本地维护映射关系：
+                        </p>
+                        <div class="space-y-2 text-xs font-mono">
+                            <div class="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                                <div>
+                                    <span class="text-purple-400 font-bold">xmtm</span> (项目条码)
+                                </div>
+                                <i data-lucide="arrow-right" class="w-3.5 h-3.5 text-slate-500"></i>
+                                <span class="text-emerald-400">Zebra ZD888 条码打印机</span>
+                            </div>
+                            <div class="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                                <div>
+                                    <span class="text-purple-400 font-bold">tjdjd</span> (体检登记单)
+                                </div>
+                                <i data-lucide="arrow-right" class="w-3.5 h-3.5 text-slate-500"></i>
+                                <span class="text-cyan-400">HP LaserJet M403 A4黑白</span>
+                            </div>
+                            <div class="flex items-center justify-between bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                                <div>
+                                    <span class="text-purple-400 font-bold">jktjbbd</span> (体检报告)
+                                </div>
+                                <i data-lucide="arrow-right" class="w-3.5 h-3.5 text-slate-500"></i>
+                                <span class="text-blue-400">Canon C3226 彩色双面机</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-card p-5 rounded-2xl border-emerald-500/20">
+                        <h3 class="text-lg font-bold text-white mb-1 flex items-center gap-2">
+                            <i data-lucide="zap" class="w-5 h-5 text-emerald-400"></i>
+                            内置 SumatraPDF 物理静默打印
+                        </h3>
+                        <p class="text-xs text-slate-300 leading-relaxed">
+                            采用 SumatraPDF 独立命令行驱动，绕过操作系统厚重 PrintDialog 弹窗；打印命令直接直达 Windows Spool 打印后台，出纸快、不占用前台焦点、绝不卡死主界面。
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 交互效果图解 -->
+                <div class="glass-panel p-6 rounded-2xl border-slate-800 flex flex-col justify-center space-y-4">
+                    <div class="text-xs font-bold text-slate-400 uppercase font-mono flex items-center gap-2">
+                        <i data-lucide="sliders" class="w-4 h-4 text-cyan-400"></i>
+                        Agent 端三种工作模式
+                    </div>
+
+                    <!-- 模式 1 -->
+                    <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-sm text-white flex items-center gap-2">
+                                <i data-lucide="eye" class="w-4 h-4 text-blue-400"></i>
+                                模式 1：高清置顶预览 (Preview)
+                            </span>
+                            <span class="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">WebView2 内核</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-1">前端触发预览指令，Agent 弹出高清 PDF 预览窗口，顶部提供打印、翻页、缩放与另存为功能。</p>
+                    </div>
+
+                    <!-- 模式 2 -->
+                    <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-sm text-white flex items-center gap-2">
+                                <i data-lucide="printer" class="w-4 h-4 text-emerald-400"></i>
+                                模式 2：静默直接打印 (Silent Print)
+                            </span>
+                            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">无感出纸</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-1">配置 `SilentPrint=true` 后，前端点击打印，本地对应打印机直接出纸，屏幕不弹任何干扰窗口。</p>
+                    </div>
+
+                    <!-- 模式 3 -->
+                    <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-sm text-white flex items-center gap-2">
+                                <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400"></i>
+                                模式 3：首次确认 & 记忆模式
+                            </span>
+                            <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded">人性化自适应</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-1">首次遇到未记忆的单据类型时弹出选机确认框，用户选择一次后自动存入本地，后续自动进入静默模式。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SLIDE 6: 部署实施与运维 ==================== -->
+        <section class="slide w-full max-w-7xl flex-col space-y-6" id="slide-5">
+            <div class="border-b border-slate-800 pb-4">
+                <span class="text-xs font-mono text-cyan-400 uppercase tracking-widest">DEPLOYMENT & OPERATIONS</span>
+                <h2 class="text-3xl font-extrabold text-white mt-1">极简部署指引与生产落地步骤</h2>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- 1. ReportApi 服务端部署 -->
+                <div class="glass-panel p-5 rounded-2xl border-cyan-500/20 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-base text-cyan-400 flex items-center gap-2">
+                                <i data-lucide="server" class="w-5 h-5"></i>
+                                1. ReportApi (服务器)
+                            </h3>
+                            <span class="text-[10px] bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded border border-cyan-500/30">核心服务端</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mb-3">解压绿色包到服务器（如 `D:\PEIS\ReportApi`）。</p>
+                        
+                        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs font-mono space-y-1 mb-3">
+                            <div class="text-slate-500">// config.ini 配置</div>
+                            <div><span class="text-cyan-300">Port</span>=82</div>
+                            <div><span class="text-cyan-300">ConnectionString</span>=Server=192.168.0.237;Database=TJXT0616;UID=sa;PWD=...;</div>
+                        </div>
+                    </div>
+                    <div class="text-xs text-slate-400 bg-slate-900/60 p-2.5 rounded border border-slate-800">
+                        双击 <code class="text-white">启动服务.cmd</code> 即启动，支持查看状态与关闭。
+                    </div>
+                </div>
+
+                <!-- 2. Java 后端配置 -->
+                <div class="glass-panel p-5 rounded-2xl border-purple-500/20 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-base text-purple-400 flex items-center gap-2">
+                                <i data-lucide="file-code" class="w-5 h-5"></i>
+                                2. Java 业务后端
+                            </h3>
+                            <span class="text-[10px] bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded border border-purple-500/30">业务中间件</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mb-3">修改 `application.yml` 并更新发布最新 JAR 包。</p>
+                        
+                        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs font-mono space-y-1 mb-3">
+                            <div class="text-slate-500"># application.yml</div>
+                            <div class="text-purple-300">report:</div>
+                            <div class="text-slate-300">  fastReportUrl: <span class="text-emerald-300">http://192.168.0.237:82/...</span></div>
+                            <div class="text-purple-300">  desktop-delivery:</div>
+                            <div class="text-slate-300">    enabled: <span class="text-amber-300">true</span></div>
+                            <div class="text-slate-300">    url: <span class="text-emerald-300">http://192.168.0.237:82/api/...</span></div>
+                        </div>
+                    </div>
+                    <div class="text-xs text-slate-400 bg-slate-900/60 p-2.5 rounded border border-slate-800">
+                        保留原有 `/exportPdf`，新增 `/desktopReportDelivery`。
+                    </div>
+                </div>
+
+                <!-- 3. Workstation Agent 部署 -->
+                <div class="glass-panel p-5 rounded-2xl border-emerald-500/20 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="font-bold text-base text-emerald-400 flex items-center gap-2">
+                                <i data-lucide="laptop" class="w-5 h-5"></i>
+                                3. PrintAgent (工作站)
+                            </h3>
+                            <span class="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30">工位客户端</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mb-3">各护士站/医生站电脑解压独立 Agent 包。</p>
+                        
+                        <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs font-mono space-y-1 mb-3">
+                            <div class="text-slate-500">// agent.ini 配置</div>
+                            <div><span class="text-emerald-300">ServerUrl</span>=http://192.168.0.237:82</div>
+                            <div><span class="text-emerald-300">SilentPrint</span>=false / true</div>
+                            <div><span class="text-emerald-300">PrintBackend</span>=SumatraPDF</div>
+                        </div>
+                    </div>
+                    <div class="text-xs text-slate-400 bg-slate-900/60 p-2.5 rounded border border-slate-800">
+                        双击 <code class="text-white">Start-DesktopAgent.cmd</code> 自动进驻系统托盘。
+                    </div>
+                </div>
+            </div>
+
+            <!-- 核心保障与安全 -->
+            <div class="glass-card p-4 rounded-xl flex items-center justify-between text-xs text-slate-300">
+                <div class="flex items-center gap-3">
+                    <i data-lucide="shield-check" class="w-5 h-5 text-emerald-400"></i>
+                    <span><b>高可靠性保证</b>：心跳断线自动重连；工作站 IP 变化自动感知并注册；支持无网络脱机保护。</span>
+                </div>
+                <div class="font-mono text-cyan-400">Ready for Production</div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Bottom Controls & Keybinding Helper -->
+    <footer class="h-14 border-t border-slate-800/80 glass-panel px-6 flex items-center justify-between z-50 flex-shrink-0">
+        <div class="flex items-center space-x-4 text-xs text-slate-400">
+            <span class="flex items-center gap-1.5"><kbd class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-mono">←</kbd> <kbd class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-mono">→</kbd> 切换幻灯片</span>
+            <span class="hidden md:inline text-slate-600">|</span>
+            <span class="hidden md:flex items-center gap-1.5"><kbd class="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-mono">F</kbd> 全屏演示</span>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <button onclick="prevSlide()" class="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition">
+                <i data-lucide="chevron-left" class="w-4 h-4"></i> 上一页
+            </button>
+            <button onclick="nextSlide()" class="px-4 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 transition shadow-lg shadow-cyan-500/20">
+                下一页 <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </footer>
+
+    <!-- Interactive Script -->
+    <script>
+        // Initialize Lucide Icons
+        lucide.createIcons();
+
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const navDots = document.querySelectorAll('.nav-dot');
+        const slideCounter = document.getElementById('slide-counter');
+        const totalSlides = slides.length;
+
+        function updateSlide() {
+            slides.forEach((slide, index) => {
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                } else {
+                    slide.classList.remove('active');
+                }
+            });
+
+            // Update Nav Buttons
+            navDots.forEach((btn, index) => {
+                if (index === currentSlide) {
+                    btn.className = "nav-dot px-3 py-1 rounded-full text-xs font-bold transition-all bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20";
+                } else {
+                    btn.className = "nav-dot px-3 py-1 rounded-full text-xs font-medium transition-all text-slate-400 hover:text-white";
+                }
+            });
+
+            // Update Counter
+            slideCounter.textContent = `${currentSlide + 1} / ${totalSlides}`;
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                currentSlide++;
+                updateSlide();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateSlide();
+            }
+        }
+
+        function goToSlide(index) {
+            if (index >= 0 && index < totalSlides) {
+                currentSlide = index;
+                updateSlide();
+            }
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`无法进入全屏: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        // Keyboard Navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+                nextSlide();
+            } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                prevSlide();
+            } else if (e.key === 'f' || e.key === 'F') {
+                toggleFullScreen();
+            }
+        });
+
+        // Initialize state
+        updateSlide();
+    </script>
+</body>
+</html>

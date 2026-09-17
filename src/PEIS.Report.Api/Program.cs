@@ -171,6 +171,7 @@ if (string.Equals(definitionSource, "LegacySqlServer", StringComparison.OrdinalI
     builder.Services.AddSingleton<ITemplateProvider, LegacyDatabaseTemplateProvider>();
     builder.Services.AddSingleton<ILegacyQueryParameterBinder, AdoNetLegacyQueryParameterBinder>();
     builder.Services.AddSingleton<IReportDataProvider, SqlServerReportDataProvider>();
+    builder.Services.AddSingleton<IFastReportDjidResolver>(sp => sp.GetRequiredService<LegacyDatabaseReportDefinitionProvider>());
 }
 else
 {
@@ -180,6 +181,7 @@ else
     builder.Services.AddSingleton<IReportCatalogProvider>(sp => sp.GetRequiredService<DeterministicReportDefinitionProvider>());
     builder.Services.AddSingleton<ITemplateProvider, DeterministicTemplateProvider>();
     builder.Services.AddSingleton<IReportDataProvider, EmptyReportDataProvider>();
+    builder.Services.AddSingleton<IFastReportDjidResolver, NullFastReportDjidResolver>();
 }
 
 // 性能指标收集

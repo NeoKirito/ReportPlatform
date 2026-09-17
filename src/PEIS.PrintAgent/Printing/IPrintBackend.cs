@@ -3,4 +3,7 @@ namespace PEIS.PrintAgent.Printing;
 public interface IPrintBackend
 {
     Task PrintAsync(string pdfPath, string printerName, int copies, bool duplex, CancellationToken cancellationToken);
+
+    Task PrintAsync(string pdfPath, string printerName, int copies, bool duplex, string? orientation, CancellationToken cancellationToken)
+        => PrintAsync(pdfPath, printerName, copies, duplex, cancellationToken);
 }

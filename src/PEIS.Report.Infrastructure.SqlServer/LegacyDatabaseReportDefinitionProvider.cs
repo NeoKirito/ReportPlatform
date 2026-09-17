@@ -113,7 +113,7 @@ public sealed class LegacyReportSchemaMapping
 ///   - bgmbmc: 模板名称
 ///   - BGID: 对应的报表ID
 /// </summary>
-public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionProvider, IReportDefinitionVersionProvider, IReportCatalogProvider
+public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionProvider, IReportDefinitionVersionProvider, IReportCatalogProvider, IFastReportDjidResolver
 {
     private readonly ReportDatabaseOptions _database;
     private readonly LegacyReportSchemaMapping _schema;
@@ -175,7 +175,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
             }
         }
 
-        // 策略2：查找pe_xtcs_bgmb表（通过bgurl、bgmbid或bgmbmc）
+        // 策略2：查找pe_xtcs_bgmb表（通过bgurl、bgmbid或bgmbmc，仅匹配dygs='2'的FastReport单据）
         try
         {
             await using var cmd = connection.CreateCommand();
@@ -184,6 +184,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
                 SELECT TOP 1 BGID 
                 FROM dbo.pe_xtcs_bgmb 
                 WHERE (bgurl = @id OR bgmbid = @id OR bgmbmc = @id) 
+                  AND dygs = '2'
                   AND BGID IS NOT NULL AND BGID <> ''
                 """;
             cmd.Parameters.Add(new SqlParameter("@id", SqlDbType.NVarChar, 128) { Value = inputId });
@@ -215,6 +216,7 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
                     SELECT TOP 1 BGID 
                     FROM dbo.pe_xtcs_bgmb 
                     WHERE bgmbmc = @fn 
+                      AND dygs = '2'
                       AND BGID IS NOT NULL AND BGID <> ''
                     """;
                 cmd.Parameters.Add(new SqlParameter("@fn", SqlDbType.NVarChar, 128) { Value = fileName.Trim() });
@@ -253,6 +255,30 @@ public sealed class LegacyDatabaseReportDefinitionProvider : IReportDefinitionPr
         }
 
         return inputId;
+    }
+
+    /// <summary>
+    /// 实现 IFastReportDjidResolver：解析外部标识为真正的 FastReport djid。
+    /// </summary>
+    public async Task<string> ResolveDjidAsync(string? rawId, string? fileName = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(rawId))
+            return string.IsNullOrWhiteSpace(fileName) ? "LEGACY" : fileName.Trim();
+
+        var trimmed = rawId.Trim();
+        if (_resolvedIdCache.TryGetValue(trimmed, out var cached))
+            return cached;
+
+        try
+        {
+            await using var connection = new SqlConnection(_database.ConnectionString);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            return await ResolveActualReportIdAsync(connection, trimmed, fileName, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return trimmed;
+        }
     }
 
     /// <summary>

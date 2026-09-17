@@ -68,4 +68,45 @@ internal static class AppIconHelper
 
         return SystemIcons.Application;
     }
+
+    /// <summary>
+    /// 加载应用程序高清 Logo 图片，优先从 Resources 目录读取 png，用于弹窗界面左上角展示。
+    /// </summary>
+    public static Image LoadLogoImage()
+    {
+        var candidatePaths = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "Resources", "peis_desktop_64.png"),
+            Path.Combine(AppContext.BaseDirectory, "Resources", "peis_desktop_128.png"),
+            Path.Combine(AppContext.BaseDirectory, "Resources", "peis_taskbar_48.png"),
+            Path.Combine(AppContext.BaseDirectory, "peis_desktop_64.png")
+        };
+
+        foreach (var path in candidatePaths)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    using var stream = File.OpenRead(path);
+                    return Image.FromStream(stream);
+                }
+            }
+            catch
+            {
+                // 忽略异常，尝试下一个
+            }
+        }
+
+        // 备选：从 ico 图标转换为 Bitmap
+        try
+        {
+            var icon = LoadAppIcon(false);
+            return icon.ToBitmap();
+        }
+        catch
+        {
+            return new Bitmap(48, 48);
+        }
+    }
 }

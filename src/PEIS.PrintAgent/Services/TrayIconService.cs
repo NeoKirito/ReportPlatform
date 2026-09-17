@@ -15,6 +15,8 @@ namespace PEIS.PrintAgent.Services;
 public sealed class TrayIconService(
     IOptions<AgentOptions> options,
     IHostApplicationLifetime lifetime,
+    PrinterSelectionStore selectionStore,
+    PrinterCatalog printerCatalog,
     ILogger<TrayIconService> logger) : IHostedService
 {
     private Thread? _uiThread;
@@ -40,9 +42,11 @@ public sealed class TrayIconService(
                 var stationItem = new ToolStripMenuItem($"工作站: {station}") { Enabled = false };
                 var serverItem = new ToolStripMenuItem($"服务器: {cfg.ServerUrl}") { Enabled = false };
 
+                var setServerItem = new ToolStripMenuItem("设置服务器地址...", null, (_, _) => OpenServerUrlSetting());
+                var managePrinterItem = new ToolStripMenuItem("管理打印机绑定...", null, (_, _) => OpenPrinterBindingManager());
+                var resetPrinterItem = new ToolStripMenuItem("重置打印机记忆", null, (_, _) => ResetPrinterMemory());
                 var logsItem = new ToolStripMenuItem("查看运行日志", null, (_, _) => OpenLogsFolder());
                 var configItem = new ToolStripMenuItem("打开配置文件", null, (_, _) => OpenConfigFile());
-                var resetPrinterItem = new ToolStripMenuItem("重置打印机记忆", null, (_, _) => ResetPrinterMemory());
                 var exitItem = new ToolStripMenuItem("退出打印代理", null, (_, _) =>
                 {
                     logger.LogInformation("Operator requested exit from system tray.");
@@ -54,9 +58,12 @@ public sealed class TrayIconService(
                 contextMenu.Items.Add(stationItem);
                 contextMenu.Items.Add(serverItem);
                 contextMenu.Items.Add(new ToolStripSeparator());
+                contextMenu.Items.Add(setServerItem);
+                contextMenu.Items.Add(managePrinterItem);
+                contextMenu.Items.Add(resetPrinterItem);
+                contextMenu.Items.Add(new ToolStripSeparator());
                 contextMenu.Items.Add(logsItem);
                 contextMenu.Items.Add(configItem);
-                contextMenu.Items.Add(resetPrinterItem);
                 contextMenu.Items.Add(new ToolStripSeparator());
                 contextMenu.Items.Add(exitItem);
 
@@ -159,6 +166,43 @@ public sealed class TrayIconService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to open config file.");
+        }
+    }
+
+    private void OpenServerUrlSetting()
+    {
+        try
+        {
+            using var form = new ServerUrlForm(options);
+            form.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to open ServerUrlForm");
+            MessageBox.Show(
+                $"打开服务器设置失败：{ex.Message}",
+                "PEIS 打印代理",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+    }
+
+    private void OpenPrinterBindingManager()
+    {
+        try
+        {
+            var installed = printerCatalog.GetInstalledPrinters();
+            var form = new PrinterBindingForm(selectionStore, installed);
+            form.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to open printer binding manager.");
+            MessageBox.Show(
+                $"打开打印机绑定管理器失败：{ex.Message}",
+                "PEIS 打印代理",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
         }
     }
 

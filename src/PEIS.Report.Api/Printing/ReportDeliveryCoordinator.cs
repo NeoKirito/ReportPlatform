@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using PEIS.Report.Api.Hubs;
 using PEIS.Report.Api.Storage;
 using PEIS.Report.Contracts;
+using PEIS.Report.Engine;
 
 namespace PEIS.Report.Api.Printing;
 
@@ -13,7 +14,8 @@ public sealed class ReportDeliveryCoordinator(
     ReportDeliveryStateStore states,
     ReportDeliveryArtifactTokenStore tokens,
     IHubContext<PrintAgentHub> hub,
-    IOptions<ReportDeliverySecurityOptions> options)
+    IOptions<ReportDeliverySecurityOptions> options,
+    IFastReportDjidResolver? djidResolver = null)
 {
     public async Task<CreateReportDeliveryResponse> CreateAsync(
         string? stationId,
@@ -68,6 +70,12 @@ public sealed class ReportDeliveryCoordinator(
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.AddMinutes(Math.Clamp(options.Value.ArtifactLifetimeMinutes, 5, 1440));
         var downloadToken = tokens.Create(artifactId, expiresAt);
+        var canonicalDjid = djid;
+        if (djidResolver is not null && !string.IsNullOrWhiteSpace(djid))
+        {
+            canonicalDjid = await djidResolver.ResolveDjidAsync(djid, fileName, cancellationToken).ConfigureAwait(false);
+        }
+
         var dispatch = new ReportDeliveryDispatch(
             jobId,
             artifactId,
@@ -81,7 +89,7 @@ public sealed class ReportDeliveryCoordinator(
             printerName,
             Math.Max(1, copies),
             duplex,
-            string.IsNullOrWhiteSpace(djid) ? null : djid.Trim());
+            string.IsNullOrWhiteSpace(canonicalDjid) ? null : canonicalDjid.Trim());
 
         states.Initialize(new ReportDeliveryResult(jobId, agent.AgentId, ReportDeliveryStatus.Queued, UpdatedAt: now));
         await hub.Clients.Group(PrintAgentHub.GroupName(agent.AgentId))

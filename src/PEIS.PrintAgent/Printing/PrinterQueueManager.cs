@@ -50,7 +50,7 @@ public sealed class PrinterQueueManager(
                 {
                     var message = attempt == 0 ? null : $"retry {attempt} of {retryCount}";
                     await item.Status(PrintTargetStatus.Printing, message);
-                    await backend.PrintAsync(item.PdfPath, printerName, item.Document.Copies, item.Document.Duplex, CancellationToken.None);
+                    await backend.PrintAsync(item.PdfPath, printerName, item.Document.Copies, item.Document.Duplex, item.Orientation, CancellationToken.None);
                     await item.Status(PrintTargetStatus.Completed, attempt == 0 ? null : $"completed after retry {attempt}");
                     lastError = null;
                     break;
@@ -77,4 +77,5 @@ public sealed record PrintWorkItem(
     Guid JobId,
     PrintDocumentDispatch Document,
     string PdfPath,
-    Func<PrintTargetStatus, string?, Task> Status);
+    Func<PrintTargetStatus, string?, Task> Status,
+    string? Orientation = null);

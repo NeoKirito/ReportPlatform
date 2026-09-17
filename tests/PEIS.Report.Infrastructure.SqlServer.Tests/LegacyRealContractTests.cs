@@ -73,6 +73,7 @@ public sealed class LegacyRealContractTests
     }
 
     [Fact]
+    [Trait("Category", "RequiresLegacySqlServer")]
     public async Task Dump_All_54_Report_Definitions()
     {
         const string connStr = "Server=YOUR_SERVER;Database=YOUR_DB;User ID=YOUR_USER;Password=YOUR_PASSWORD;TrustServerCertificate=True;";

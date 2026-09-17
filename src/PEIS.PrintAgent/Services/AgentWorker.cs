@@ -277,7 +277,48 @@ public sealed class AgentWorker(
 
             var isDirectPrint = delivery.Action == ReportDeliveryAction.Print;
             var canPrint = isDirectPrint || delivery.Action == ReportDeliveryAction.PreviewAndPrint;
-            var shouldPrintSilently = isDirectPrint || (canPrint && cfg.Printing.Silent);
+
+            // 获取该 FastReport djid 的专属打印偏好配置
+            var pref = deliveryPrinters.GetPreference(delivery.Djid);
+
+            // 打印行为决策（保证纯预览不出纸）：
+            // 1. 若 Action == Preview，永远不出纸；
+            // 2. 若单据专属设定为 Silent -> 直接静默打印；
+            // 3. 若单据专属设定为 Preview -> 弹出预览窗口；
+            // 4. 若为 Auto/未指定 -> 按原有逻辑 (isDirectPrint || cfg.Printing.Silent)
+            bool shouldPrintSilently;
+            if (!canPrint)
+            {
+                shouldPrintSilently = false;
+            }
+            else if (string.Equals(pref?.PrintBehavior, "Silent", StringComparison.OrdinalIgnoreCase))
+            {
+                shouldPrintSilently = true;
+            }
+            else if (string.Equals(pref?.PrintBehavior, "Preview", StringComparison.OrdinalIgnoreCase))
+            {
+                shouldPrintSilently = false;
+            }
+            else
+            {
+                shouldPrintSilently = isDirectPrint || (canPrint && cfg.Printing.Silent);
+            }
+
+            // 单双面决策：若单据配置覆盖，使用单据配置；否则遵循接口传参
+            var effectiveDuplex = pref?.Duplex switch
+            {
+                "Simplex" => false,
+                "DuplexLong" or "DuplexShort" => true,
+                _ => delivery.Duplex
+            };
+
+            // 打印份数决策：若单据配置指定了份数，使用单据配置；否则遵循接口传参
+            var effectiveCopies = pref?.Copies > 0 ? pref.Copies : Math.Max(1, delivery.Copies);
+
+            // 纸张方向决策：若单据指定了横向或纵向，传递方向参数；否则跟随模板
+            var effectiveOrientation = string.Equals(pref?.Orientation, "Auto", StringComparison.OrdinalIgnoreCase)
+                ? null
+                : pref?.Orientation;
 
             var installed = printers.GetInstalledPrinters();
             // 查找之前记住的打印机（按报表ID）；若为静默打印，允许使用默认打印机兜底
@@ -290,11 +331,11 @@ public sealed class AgentWorker(
                     useDefaultWhenMissing: shouldPrintSilently)
                 : null;
 
-            // 静默打印：直接打印到记住的/默认打印机
+            // 执行打印入队：使用生效的份数、单双面与纸张方向
             async Task PrintAsync(string selectedPrinter)
             {
                 deliveryPrinters.Remember(delivery.Djid, selectedPrinter, installed);
-                await QueueDeliveryPrintAsync(connection, cfg.AgentId, delivery, path, selectedPrinter);
+                await QueueDeliveryPrintAsync(connection, cfg.AgentId, delivery, path, selectedPrinter, effectiveCopies, effectiveDuplex, effectiveOrientation);
             }
 
             // 静默打印分流：当调用方明确要求 action=Print 或 本地配置了 SilentPrint=true 时，直接执行打印而不弹窗
@@ -341,7 +382,10 @@ public sealed class AgentWorker(
         string agentId,
         ReportDeliveryDispatch delivery,
         string path,
-        string printerName)
+        string printerName,
+        int copies,
+        bool duplex,
+        string? orientation)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(printerName);
 
@@ -353,8 +397,8 @@ public sealed class AgentWorker(
             "uploaded-pdf",
             delivery.PrinterRole ?? delivery.Djid ?? string.Empty,
             printerName,
-            Math.Max(1, delivery.Copies),
-            delivery.Duplex);
+            Math.Max(1, copies),
+            duplex);
 
         return queues.EnqueueAsync(new PrintWorkItem(
             delivery.JobId,
@@ -372,7 +416,8 @@ public sealed class AgentWorker(
                     _ => ReportDeliveryStatus.Queued
                 },
                 message,
-                CancellationToken.None)), CancellationToken.None);
+                CancellationToken.None),
+            Orientation: orientation), CancellationToken.None);
     }
 
     /// <summary>

@@ -5,6 +5,8 @@ namespace PEIS.PrintAgent.Services;
 /// <summary>Resolves workstation-local printer choices without exposing physical printer names to the browser.</summary>
 public sealed class DeliveryPrinterResolver(PrinterSelectionStore selections)
 {
+    public DjidPrintPreference? GetPreference(string? djid) => selections.GetPreference(djid);
+
     public string? Resolve(
         string? djid,
         string? serverPrinterName,

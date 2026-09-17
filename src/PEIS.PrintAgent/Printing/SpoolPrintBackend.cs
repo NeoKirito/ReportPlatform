@@ -14,19 +14,22 @@ public sealed class SpoolPrintBackend(
     IOptions<AgentOptions> options,
     ILogger<SpoolPrintBackend> logger) : IPrintBackend
 {
-    public async Task PrintAsync(string pdfPath, string printerName, int copies, bool duplex, CancellationToken cancellationToken)
+    public Task PrintAsync(string pdfPath, string printerName, int copies, bool duplex, CancellationToken cancellationToken)
+        => PrintAsync(pdfPath, printerName, copies, duplex, null, cancellationToken);
+
+    public async Task PrintAsync(string pdfPath, string printerName, int copies, bool duplex, string? orientation, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(printerName);
         if (!File.Exists(pdfPath))
             throw new FileNotFoundException("PDF file not found for printing.", pdfPath);
 
         var fullPath = Path.GetFullPath(pdfPath);
-        logger.LogInformation("Spool print: {File} -> {Printer}, copies={Copies}, duplex={Duplex}", fullPath, printerName, copies, duplex);
+        logger.LogInformation("Spool print: {File} -> {Printer}, copies={Copies}, duplex={Duplex}, orientation={Orientation}", fullPath, printerName, copies, duplex, orientation);
 
         var executable = ResolvePrintExecutable(options.Value);
         if (!string.IsNullOrWhiteSpace(executable) && File.Exists(executable))
         {
-            await PrintViaSumatraAsync(executable, fullPath, printerName, copies, duplex, cancellationToken);
+            await PrintViaSumatraAsync(executable, fullPath, printerName, copies, duplex, orientation, cancellationToken);
             return;
         }
 
@@ -41,11 +44,19 @@ public sealed class SpoolPrintBackend(
         string printerName,
         int copies,
         bool duplex,
+        string? orientation,
         CancellationToken cancellationToken)
     {
         var settings = new List<string>();
         if (copies > 1) settings.Add($"{copies}x");
         if (duplex) settings.Add("duplex");
+        if (!string.IsNullOrWhiteSpace(orientation))
+        {
+            if (string.Equals(orientation, "Landscape", StringComparison.OrdinalIgnoreCase))
+                settings.Add("landscape");
+            else if (string.Equals(orientation, "Portrait", StringComparison.OrdinalIgnoreCase))
+                settings.Add("portrait");
+        }
 
         var settingsArg = settings.Count > 0 ? $"-print-settings \"{string.Join(",", settings)}\" " : "";
         var arguments = $"-print-to \"{printerName}\" -silent -exit-when-done {settingsArg}\"{fullPath}\"";

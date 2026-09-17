@@ -56,6 +56,52 @@ public sealed class PrinterSelectionStoreTests : IDisposable
         Assert.Equal("Windows Default", store.Get("report-b"));
     }
 
+    [Fact]
+    public void DjidPrintPreference_stores_behavior_duplex_orientation_and_copies()
+    {
+        var store = new PrinterSelectionStore(_root);
+        var pref = new DjidPrintPreference
+        {
+            Djid = "tjdjd",
+            Description = "体检导检单",
+            PrinterName = "HP LaserJet",
+            PrintBehavior = "Silent",
+            Duplex = "DuplexLong",
+            Orientation = "Landscape",
+            Copies = 2
+        };
+        store.Save(pref);
+
+        var loaded = new PrinterSelectionStore(_root).GetPreference("tjdjd");
+        Assert.NotNull(loaded);
+        Assert.Equal("tjdjd", loaded.Djid);
+        Assert.Equal("体检导检单", loaded.Description);
+        Assert.Equal("HP LaserJet", loaded.PrinterName);
+        Assert.Equal("Silent", loaded.PrintBehavior);
+        Assert.Equal("DuplexLong", loaded.Duplex);
+        Assert.Equal("Landscape", loaded.Orientation);
+        Assert.Equal(2, loaded.Copies);
+        Assert.Equal("HP LaserJet", new PrinterSelectionStore(_root).Get("tjdjd"));
+    }
+
+    [Fact]
+    public void Backwards_compatible_with_old_flat_string_json()
+    {
+        Directory.CreateDirectory(_root);
+        var jsonPath = Path.Combine(_root, PrinterSelectionStore.FileName);
+        File.WriteAllText(jsonPath, "{\"jktjbbd\": \"Canon iR-ADV\", \"xmtm\": \"TSC TE244\"}");
+
+        var store = new PrinterSelectionStore(_root);
+        var jktj = store.GetPreference("jktjbbd");
+        Assert.NotNull(jktj);
+        Assert.Equal("Canon iR-ADV", jktj.PrinterName);
+        Assert.Equal("Canon iR-ADV", store.Get("jktjbbd"));
+
+        var xmtm = store.GetPreference("xmtm");
+        Assert.NotNull(xmtm);
+        Assert.Equal("TSC TE244", xmtm.PrinterName);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
