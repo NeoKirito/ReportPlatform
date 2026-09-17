@@ -268,7 +268,7 @@ internal sealed class PrinterBindingForm : Form
             Name = ColDjid,
             HeaderText = "单据代码 (djid)",
             FillWeight = 16,
-            SortMode = DataGridViewColumnSortMode.Automatic,
+            SortMode = DataGridViewColumnSortMode.NotSortable,
             ToolTipText = "FastReport 单据主键标识，如 tjdjd、jktjbbd、xmtm 等"
         };
 
@@ -277,7 +277,7 @@ internal sealed class PrinterBindingForm : Form
             Name = ColDesc,
             HeaderText = "单据名称 / 备注",
             FillWeight = 20,
-            SortMode = DataGridViewColumnSortMode.Automatic,
+            SortMode = DataGridViewColumnSortMode.NotSortable,
             ToolTipText = "便于运维识别的中文名称，如体检导检单"
         };
 
@@ -288,7 +288,7 @@ internal sealed class PrinterBindingForm : Form
             FillWeight = 28,
             FlatStyle = FlatStyle.Flat,
             DisplayStyleForCurrentCellOnly = true,
-            SortMode = DataGridViewColumnSortMode.Automatic
+            SortMode = DataGridViewColumnSortMode.NotSortable
         };
         foreach (var p in _installedPrinters)
             _printerCol.Items.Add(p.Name);
@@ -300,7 +300,7 @@ internal sealed class PrinterBindingForm : Form
             FillWeight = 18,
             FlatStyle = FlatStyle.Flat,
             DisplayStyleForCurrentCellOnly = true,
-            SortMode = DataGridViewColumnSortMode.Automatic
+            SortMode = DataGridViewColumnSortMode.NotSortable
         };
         _behaviorCol.Items.AddRange(BehaviorAuto, BehaviorSilent, BehaviorPreview);
 
@@ -311,7 +311,7 @@ internal sealed class PrinterBindingForm : Form
             FillWeight = 17,
             FlatStyle = FlatStyle.Flat,
             DisplayStyleForCurrentCellOnly = true,
-            SortMode = DataGridViewColumnSortMode.Automatic
+            SortMode = DataGridViewColumnSortMode.NotSortable
         };
         _duplexCol.Items.AddRange(DuplexAuto, DuplexSimplex, DuplexLong, DuplexShort);
 
@@ -322,7 +322,7 @@ internal sealed class PrinterBindingForm : Form
             FillWeight = 16,
             FlatStyle = FlatStyle.Flat,
             DisplayStyleForCurrentCellOnly = true,
-            SortMode = DataGridViewColumnSortMode.Automatic
+            SortMode = DataGridViewColumnSortMode.NotSortable
         };
         _orientationCol.Items.AddRange(OrientAuto, OrientPortrait, OrientLandscape);
 
@@ -332,7 +332,7 @@ internal sealed class PrinterBindingForm : Form
             HeaderText = "份数",
             FillWeight = 13,
             SortMode = DataGridViewColumnSortMode.NotSortable,
-            ToolTipText = "0 表示跟随接口请求；大于 0 表示强制固定份数"
+            ToolTipText = "默认打印份数，默认为 1 份"
         };
 
         _grid = new DataGridView
@@ -345,7 +345,7 @@ internal sealed class PrinterBindingForm : Form
             SelectionMode = DataGridViewSelectionMode.FullRowSelect,
             MultiSelect = true,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            EditMode = DataGridViewEditMode.EditOnEnter,
+            EditMode = DataGridViewEditMode.EditOnKeystrokeOrF2,
             BackgroundColor = Color.White,
             BorderStyle = BorderStyle.None,
             GridColor = Color.FromArgb(226, 232, 240),
@@ -353,9 +353,11 @@ internal sealed class PrinterBindingForm : Form
             RowTemplate = { Height = 32 }
         };
 
-        // 表头美化：清爽现代浅灰底，深灰字
+        // 表头美化：清爽现代浅灰底，深灰字；完全禁用选中高亮变色（保持平稳浅灰底）
         _grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(241, 245, 249);
         _grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(51, 65, 85);
+        _grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(241, 245, 249);
+        _grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = Color.FromArgb(51, 65, 85);
         _grid.ColumnHeadersDefaultCellStyle.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold, GraphicsUnit.Point);
         _grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft;
         _grid.ColumnHeadersHeight = 36;
@@ -371,6 +373,38 @@ internal sealed class PrinterBindingForm : Form
 
         _grid.Columns.AddRange(_djidCol, _descCol, _printerCol, _behaviorCol, _duplexCol, _orientationCol, _copiesCol);
         _grid.DataError += (_, e) => e.ThrowException = false;
+
+        // 保证列头永远不绘制选中高亮背景与焦点虚线框
+        _grid.CellPainting += (_, e) =>
+        {
+            if (e.RowIndex == -1)
+            {
+                e.Paint(e.ClipBounds, e.PaintParts & ~DataGridViewPaintParts.SelectionBackground & ~DataGridViewPaintParts.Focus);
+                e.Handled = true;
+            }
+        };
+
+        // 点击下拉框列时直接展开下拉列表，操作更流畅
+        _grid.CellClick += (_, e) =>
+        {
+            if (e.RowIndex >= 0 && e.ColumnIndex >= 0 && _grid.Columns[e.ColumnIndex] is DataGridViewComboBoxColumn)
+            {
+                _grid.BeginEdit(true);
+                if (_grid.EditingControl is ComboBox cb)
+                {
+                    cb.DroppedDown = true;
+                }
+            }
+        };
+
+        // 编辑控件样式优化：避免原生 Windows 控件突兀变蓝
+        _grid.EditingControlShowing += (_, e) =>
+        {
+            if (e.Control is ComboBox cb)
+            {
+                cb.FlatStyle = FlatStyle.Flat;
+            }
+        };
 
         // ── 4. 底部面板 (状态提示 + 圆角保存/取消按钮) ──────────────────────────
         var bottomPanel = new Panel
@@ -548,7 +582,7 @@ internal sealed class PrinterBindingForm : Form
         };
 
         // 份数
-        row.Cells[ColCopies].Value = pref.Copies > 0 ? pref.Copies.ToString() : "0";
+        row.Cells[ColCopies].Value = (pref.Copies > 0 ? pref.Copies : 1).ToString();
     }
 
     private void OnAddRow()
@@ -565,7 +599,7 @@ internal sealed class PrinterBindingForm : Form
             PrintBehavior = "Auto",
             Duplex = "Auto",
             Orientation = "Auto",
-            Copies = 0
+            Copies = 1
         };
         AddRow(pref);
         var newIdx = _grid.Rows.Count - 1;
@@ -600,7 +634,7 @@ internal sealed class PrinterBindingForm : Form
             PrintBehavior = "Auto",
             Duplex = "Auto",
             Orientation = "Auto",
-            Copies = 0
+            Copies = 1
         });
 
         var idx = _grid.Rows.Count - 1;
@@ -636,7 +670,7 @@ internal sealed class PrinterBindingForm : Form
                     PrintBehavior = "Auto",
                     Duplex = "Auto",
                     Orientation = "Auto",
-                    Copies = 0
+                    Copies = 1
                 });
             }
         }
@@ -699,7 +733,7 @@ internal sealed class PrinterBindingForm : Form
             }
 
             _ = int.TryParse(copiesRaw, out var copies);
-            if (copies < 0) copies = 0;
+            if (copies <= 0) copies = 1;
 
             var behavior = behaviorRaw switch
             {

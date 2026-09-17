@@ -312,8 +312,8 @@ public sealed class AgentWorker(
                 _ => delivery.Duplex
             };
 
-            // 打印份数决策：若单据配置指定了份数，使用单据配置；否则遵循接口传参
-            var effectiveCopies = pref?.Copies > 0 ? pref.Copies : Math.Max(1, delivery.Copies);
+            // 打印份数决策：若单据配置指定了强制固定份数(>1)，使用单据配置；否则遵循接口传参（默认兜底为 1）
+            var effectiveCopies = pref?.Copies > 1 ? pref.Copies : Math.Max(1, delivery.Copies);
 
             // 纸张方向决策：若单据指定了横向或纵向，传递方向参数；否则跟随模板
             var effectiveOrientation = string.Equals(pref?.Orientation, "Auto", StringComparison.OrdinalIgnoreCase)

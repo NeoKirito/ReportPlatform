@@ -38,9 +38,9 @@ public sealed class DjidPrintPreference
     public string Orientation { get; set; } = "Auto";
 
     /// <summary>
-    /// 打印份数：0 为跟随接口请求；大于 0 为强制固定份数。
+    /// 打印份数：默认为 1 份；大于 0 为强制固定份数。
     /// </summary>
-    public int Copies { get; set; } = 0;
+    public int Copies { get; set; } = 1;
 }
 
 /// <summary>
@@ -184,7 +184,8 @@ public sealed class PrinterSelectionStore
                     result[djid] = new DjidPrintPreference
                     {
                         Djid = djid,
-                        PrinterName = prop.Value.GetString()?.Trim() ?? string.Empty
+                        PrinterName = prop.Value.GetString()?.Trim() ?? string.Empty,
+                        Copies = 1
                     };
                 }
                 else if (prop.Value.ValueKind == JsonValueKind.Object)
@@ -196,6 +197,7 @@ public sealed class PrinterSelectionStore
                     if (pref is not null)
                     {
                         pref.Djid = djid;
+                        if (pref.Copies <= 0) pref.Copies = 1;
                         result[djid] = pref;
                     }
                 }
