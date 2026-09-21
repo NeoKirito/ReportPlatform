@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('Start', 'Stop', 'Status')]
@@ -87,10 +87,10 @@ try {
             Write-Host ('PrintAgent is running. PID: ' + (($running | ForEach-Object { $_.Id }) -join ', '))
             if (Test-Path -LiteralPath $statePath) {
                 try {
-                    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-                    Write-Host "Server URL : $($state.ServerUrl)"
-                    Write-Host "Station ID : $($state.StationId)"
-                    Write-Host "Started At : $($state.StartedAt)"
+                    $rawState = [IO.File]::ReadAllText($statePath, [Text.Encoding]::UTF8)
+                    if ($rawState -match '"ServerUrl"\s*:\s*"([^"]+)"') { Write-Host "Server URL : $($matches[1])" }
+                    if ($rawState -match '"StationId"\s*:\s*"([^"]+)"') { Write-Host "Station ID : $($matches[1])" }
+                    if ($rawState -match '"StartedAt"\s*:\s*"([^"]+)"') { Write-Host "Started At : $($matches[1])" }
                 }
                 catch { }
             }
@@ -99,7 +99,7 @@ try {
             $recentLog = Get-ChildItem -Path $logsRoot -Filter "agent-*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if ($recentLog) {
                 Write-Host "`nRecent log (${recentLog.Name}) tail:"
-                Get-Content -LiteralPath $recentLog.FullName -Tail 5 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
+                @(Get-Content -LiteralPath $recentLog.FullName -ErrorAction SilentlyContinue) | Select-Object -Last 5 | ForEach-Object { Write-Host "  $_" }
             }
         }
     }
@@ -144,12 +144,12 @@ try {
             if ($child.HasExited) {
                 $errText = ''
                 $recentLog = Get-ChildItem -Path $logsRoot -Filter "agent-*.log" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-                if ($recentLog) { $errText = (Get-Content -LiteralPath $recentLog.FullName -Tail 10 -ErrorAction SilentlyContinue) -join "`n" }
+                if ($recentLog) { $errText = (@(Get-Content -LiteralPath $recentLog.FullName -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
                 throw "PrintAgent exited unexpectedly (ExitCode: $($child.ExitCode)). $errText"
             }
 
-            $state = @{ ProcessId = $child.Id; ServerUrl = $serverUrl; StationId = $stationId; StartedAt = $child.StartTime.ToUniversalTime().ToString('o') }
-            $state | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding UTF8
+            $stateText = "{`"ProcessId`":$($child.Id),`"ServerUrl`":`"$serverUrl`",`"StationId`":`"$stationId`",`"StartedAt`":`"$($child.StartTime.ToUniversalTime().ToString('o'))`"}"
+            [IO.File]::WriteAllText($statePath, $stateText, [Text.Encoding]::UTF8)
 
             Write-Host '============================================================'
             Write-Host "PrintAgent 打印代理已成功在后台启动。PID: $($child.Id)"

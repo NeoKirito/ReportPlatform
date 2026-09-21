@@ -34,7 +34,7 @@ function Read-ServiceConfig {
         $separator = $trimmed.IndexOf('=')
         if ($separator -lt 0) { throw 'Invalid config.ini line. Use Name=Value.' }
         $key = $trimmed.Substring(0, $separator).Trim()
-        if ($key -notin @('Port', 'ConnectionString')) { throw 'Unknown setting in config.ini. Only Port and ConnectionString are supported.' }
+        if ($key -ne 'Port' -and $key -ne 'ConnectionString') { throw 'Unknown setting in config.ini. Only Port and ConnectionString are supported.' }
         if ($values.ContainsKey($key)) { throw "Duplicate setting: $key" }
         $values[$key] = $trimmed.Substring($separator + 1).Trim()
     }
@@ -84,8 +84,13 @@ try {
         else {
             Write-Host ('Service is running. PID: ' + (($running | ForEach-Object { $_.Id }) -join ', '))
             if (Test-Path -LiteralPath $statePath) {
-                $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-                Write-Host "URL at last start: http://127.0.0.1:$($state.Port)/BaseInfo/Report/GetReportByJson"
+                try {
+                    $rawState = [IO.File]::ReadAllText($statePath, [Text.Encoding]::UTF8)
+                    if ($rawState -match '"Port"\s*:\s*(\d+)') {
+                        Write-Host "URL at last start: http://127.0.0.1:$($matches[1])/BaseInfo/Report/GetReportByJson"
+                    }
+                }
+                catch { }
             }
         }
     }
@@ -132,19 +137,26 @@ try {
             finally {
                 foreach ($key in $saved.Keys) { [Environment]::SetEnvironmentVariable($key, $saved[$key], 'Process') }
             }
-            $state = @{ ProcessId = $child.Id; Port = $port; StartedAt = $child.StartTime.ToUniversalTime().ToString('o') }
-            $state | ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding UTF8
+            $stateText = "{`"ProcessId`":$($child.Id),`"Port`":$port,`"StartedAt`":`"$($child.StartTime.ToUniversalTime().ToString('o'))`"}"
+            [IO.File]::WriteAllText($statePath, $stateText, [Text.Encoding]::UTF8)
             $deadline = [DateTime]::UtcNow.AddSeconds(45)
             $healthy = $false
             while ([DateTime]::UtcNow -lt $deadline) {
                 $child.Refresh()
                 if ($child.HasExited) { throw 'Service exited during startup. Check the latest files in logs.' }
                 try {
-                    $response = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:$port/health" -TimeoutSec 2
-                    $health = $response.Content | ConvertFrom-Json
-                    if ($response.StatusCode -eq 200 -and $health.service -eq 'PEIS.Report.Api') { $healthy = $true; break }
+                    $client = New-Object System.Net.WebClient
+                    $client.Encoding = [Text.Encoding]::UTF8
+                    $responseContent = $client.DownloadString("http://127.0.0.1:$port/health")
+                    if ($responseContent -match '"service"\s*:\s*"PEIS\.Report\.Api"') {
+                        $healthy = $true
+                        break
+                    }
                 }
                 catch { }
+                finally {
+                    if ($client) { $client.Dispose() }
+                }
                 Start-Sleep -Milliseconds 300
             }
             $child.Refresh()
