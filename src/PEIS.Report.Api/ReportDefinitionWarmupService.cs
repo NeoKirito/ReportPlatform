@@ -23,6 +23,13 @@ public sealed class ReportDefinitionWarmupService(
 
         try
         {
+            // 启动时清除磁盘持久化缓存，确保重新读取数据库最新报表定义
+            // 否则用户修改报表后重启服务，可能命中旧磁盘缓存导致修改不生效
+            var cleared = cache.ClearDiskCache();
+            if (cleared > 0)
+            {
+                logger.LogInformation("启动时已清除 {Count} 个磁盘缓存文件，将重新从数据库加载最新报表定义。", cleared);
+            }
             var configuredIds = configuration.GetSection("ReportEngine:WarmupReportIds").Get<string[]>() ?? [];
             var isDynamicAll = configuredIds.Length == 0 || configuredIds.Any(x => string.Equals(x.Trim(), "*", StringComparison.OrdinalIgnoreCase));
 

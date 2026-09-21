@@ -167,6 +167,24 @@ public sealed class ReportDefinitionCache
         return removed;
     }
 
+    /// <summary>
+    /// Clears the entire on-disk persistence cache. Used on service startup to guarantee
+    /// that a restarted process re-reads the current database state rather than returning
+    /// stale definitions that were persisted before the restart.
+    /// </summary>
+    public int ClearDiskCache()
+    {
+        if (_persistenceDirectory is null || !Directory.Exists(_persistenceDirectory))
+            return 0;
+
+        var removed = 0;
+        foreach (var path in Directory.EnumerateFiles(_persistenceDirectory, "*.json", SearchOption.TopDirectoryOnly))
+        {
+            try { File.Delete(path); removed++; } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        return removed;
+    }
+
     public static string BuildCacheKey(string reportId, ReportDefinitionVersion version)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reportId);
