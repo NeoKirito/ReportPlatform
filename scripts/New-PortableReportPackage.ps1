@@ -73,9 +73,10 @@ foreach ($required in @('PEIS.Report.Api.exe', 'coreclr.dll', 'hostfxr.dll', 'Sy
 
 # Windows PowerShell and cmd.exe expect these encodings/newlines on older hosts.
 $utf8Bom = New-Object Text.UTF8Encoding($true)
+$utf8NoBom = New-Object Text.UTF8Encoding($false)
 foreach ($file in (Get-ChildItem -LiteralPath $packageRoot -Recurse -File | Where-Object { $_.Extension -in '.cmd', '.ps1', '.ini', '.txt' })) {
     $content = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n").Replace("`n", "`r`n")
-    $encoding = if ($file.Extension -eq '.cmd') { [Text.Encoding]::ASCII } else { $utf8Bom }
+    $encoding = if ($file.Extension -eq '.cmd') { $utf8NoBom } else { $utf8Bom }
     [IO.File]::WriteAllText($file.FullName, $content, $encoding)
 }
 
