@@ -1,14 +1,18 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
     [ValidateSet('Start', 'Stop', 'Status')]
     [string]$Action
 )
 
-# Compatible with the Windows PowerShell 5.1 shipped with Windows.
+# Compatible with Windows PowerShell 2.0+ and modern PowerShell.
+$scriptDir = if (Test-Path Variable:PSScriptRoot) { $PSScriptRoot } else { $null }
+if (!$scriptDir -and $MyInvocation.MyCommand.Path) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (!$scriptDir -and $MyInvocation.MyCommand.Definition) { $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition }
+$packageRoot = Split-Path -Parent $scriptDir
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$packageRoot = Split-Path -Parent $PSScriptRoot
 $appRoot = Join-Path $packageRoot 'app'
 $exePath = Join-Path $appRoot 'PEIS.Report.Api.exe'
 $stateRoot = Join-Path $packageRoot 'run'
