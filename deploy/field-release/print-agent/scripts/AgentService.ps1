@@ -27,6 +27,12 @@ function Get-OwnedProcess {
     })
 }
 
+function Test-Blank([object]$value) {
+    if ($null -eq $value) { return $true }
+    $str = [string]$value
+    return ($str.Trim().Length -eq 0)
+}
+
 function Read-AgentConfig {
     $configPath = Join-Path $packageRoot 'config.ini'
     if (!(Test-Path -LiteralPath $configPath)) {
@@ -47,7 +53,7 @@ function Read-AgentConfig {
         $values[$key] = $val
     }
 
-    if (!$values.ContainsKey('ServerUrl') -or [string]::IsNullOrWhiteSpace($values['ServerUrl'])) {
+    if (!$values.ContainsKey('ServerUrl') -or (Test-Blank $values['ServerUrl'])) {
         throw 'Fill ServerUrl in config.ini before starting PrintAgent (e.g. ServerUrl=http://192.168.0.237:82).'
     }
 

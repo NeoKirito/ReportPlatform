@@ -29,6 +29,12 @@ function Get-OwnedProcess {
     })
 }
 
+function Test-Blank([object]$value) {
+    if ($null -eq $value) { return $true }
+    $str = [string]$value
+    return ($str.Trim().Length -eq 0)
+}
+
 function Read-ServiceConfig {
     $configPath = Join-Path $packageRoot 'config.ini'
     $values = @{}
@@ -46,7 +52,7 @@ function Read-ServiceConfig {
     if (!$values.ContainsKey('Port') -or ![int]::TryParse($values['Port'], [ref]$portNumber) -or $portNumber -lt 1 -or $portNumber -gt 65535) {
         throw 'Port must be a number from 1 to 65535 in config.ini.'
     }
-    if (!$values.ContainsKey('ConnectionString') -or [string]::IsNullOrWhiteSpace($values['ConnectionString'])) {
+    if (!$values.ContainsKey('ConnectionString') -or (Test-Blank $values['ConnectionString'])) {
         throw 'Fill ConnectionString in config.ini before starting the service.'
     }
     # Parse without opening the database or printing any part of the secret.
@@ -55,8 +61,8 @@ function Read-ServiceConfig {
         # DbConnectionStringBuilder implements IDictionary: PowerShell's property
         # adapter would otherwise add a key literally named ConnectionString.
         $connection.set_ConnectionString($values['ConnectionString'])
-        $hasServer = @('Server', 'Data Source', 'Address', 'Addr', 'Network Address') | Where-Object { $connection.ContainsKey($_) -and ![string]::IsNullOrWhiteSpace($connection[$_]) }
-        $hasDatabase = @('Database', 'Initial Catalog') | Where-Object { $connection.ContainsKey($_) -and ![string]::IsNullOrWhiteSpace($connection[$_]) }
+        $hasServer = @('Server', 'Data Source', 'Address', 'Addr', 'Network Address') | Where-Object { $connection.ContainsKey($_) -and !(Test-Blank $connection[$_]) }
+        $hasDatabase = @('Database', 'Initial Catalog') | Where-Object { $connection.ContainsKey($_) -and !(Test-Blank $connection[$_]) }
         if (!$hasServer -or !$hasDatabase) { throw 'Missing server/database.' }
     }
     catch { throw 'Invalid ConnectionString. Include Server and Database; check the SQL Server connection-string syntax.' }
@@ -147,7 +153,12 @@ try {
             $healthy = $false
             while ([DateTime]::UtcNow -lt $deadline) {
                 $child.Refresh()
-                if ($child.HasExited) { throw 'Service exited during startup. Check the latest files in logs.' }
+                if ($child.HasExited) {
+                    $errText = ''
+                    if (Test-Path -LiteralPath $stderr) { $errText = (@(Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
+                    if (!$errText -and (Test-Path -LiteralPath $stdout)) { $errText = (@(Get-Content -LiteralPath $stdout -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
+                    throw "Service exited during startup (ExitCode: $($child.ExitCode)). $errText"
+                }
                 try {
                     $client = New-Object System.Net.WebClient
                     $client.Encoding = [Text.Encoding]::UTF8
@@ -164,7 +175,12 @@ try {
                 Start-Sleep -Milliseconds 300
             }
             $child.Refresh()
-            if (!$healthy -or $child.HasExited) { throw 'Service did not become healthy. Check the latest files in logs.' }
+            if (!$healthy -or $child.HasExited) {
+                $errText = ''
+                if (Test-Path -LiteralPath $stderr) { $errText = (@(Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
+                if (!$errText -and (Test-Path -LiteralPath $stdout)) { $errText = (@(Get-Content -LiteralPath $stdout -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
+                throw "Service did not become healthy within 45s (ExitCode: $($child.ExitCode)). $errText"
+            }
             Write-Host "Service started. PID: $($child.Id)"
             Write-Host "POST http://127.0.0.1:$port/BaseInfo/Report/GetReportByJson"
             Write-Host 'For LAN access, replace 127.0.0.1 with this server IP.'
