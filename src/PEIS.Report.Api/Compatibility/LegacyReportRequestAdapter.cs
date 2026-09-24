@@ -66,11 +66,54 @@ public sealed class LegacyReportRequestAdapter
             }
         }
 
+        // 3. 解析调用方传入的水印参数（如 watermark: false 或 watermarkText: "xxx"）
+        WatermarkOptions? watermark = null;
+        if (parameters.TryGetValue("watermark", out var wmElem))
+        {
+            if (wmElem.ValueKind == JsonValueKind.False)
+                watermark = new WatermarkOptions(Enabled: false);
+            else if (wmElem.ValueKind == JsonValueKind.True)
+                watermark = new WatermarkOptions(Enabled: true);
+            else if (wmElem.ValueKind == JsonValueKind.String)
+                watermark = new WatermarkOptions(Enabled: true, Text: wmElem.GetString());
+            else if (wmElem.ValueKind == JsonValueKind.Object)
+            {
+                var enabled = true;
+                string? text = null;
+                double opacity = 0.12;
+                double angle = -30;
+                float fontSize = 54;
+                if (wmElem.TryGetProperty("enabled", out var e) && e.ValueKind is JsonValueKind.False or JsonValueKind.True)
+                    enabled = e.GetBoolean();
+                if (wmElem.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
+                    text = t.GetString();
+                if (wmElem.TryGetProperty("opacity", out var o) && o.TryGetDouble(out var ov))
+                    opacity = ov;
+                if (wmElem.TryGetProperty("angle", out var a) && a.TryGetDouble(out var av))
+                    angle = av;
+                if (wmElem.TryGetProperty("fontSize", out var f) && f.TryGetSingle(out var fv))
+                    fontSize = fv;
+                watermark = new WatermarkOptions(enabled, text, opacity, angle, fontSize);
+            }
+        }
+        else if (parameters.TryGetValue("watermarkEnabled", out var weElem))
+        {
+            if (weElem.ValueKind == JsonValueKind.False || (weElem.ValueKind == JsonValueKind.String && bool.TryParse(weElem.GetString(), out var b) && !b))
+                watermark = new WatermarkOptions(Enabled: false);
+            else if (weElem.ValueKind == JsonValueKind.True || (weElem.ValueKind == JsonValueKind.String && bool.TryParse(weElem.GetString(), out var bt) && bt))
+                watermark = new WatermarkOptions(Enabled: true);
+        }
+
+        if (watermark is null && parameters.TryGetValue("watermarkText", out var wtElem) && wtElem.ValueKind == JsonValueKind.String)
+        {
+            watermark = new WatermarkOptions(Enabled: true, Text: wtElem.GetString());
+        }
+
         return new ReportRenderRequest(
             ReportId: reportId ?? "LEGACY",
             Parameters: parameters,
             Profile: "legacy",
-            Watermark: null,
+            Watermark: watermark,
             FileName: fileName,
             LegacyPayload: raw);
     }

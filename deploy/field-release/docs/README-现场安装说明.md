@@ -13,7 +13,12 @@
 
 ## 水印
 
-服务生成 PDF 时，从维护库 `dbo.qx_hospital.jgmc` 只读获取机构名称，并以斜向浅灰文字显示为水印。文字在内存中默认缓存一小时。维护库不可用或名称为空时，PDF 会继续生成，只是不加水印。
+报表服务已支持在根目录 `config.ini` 中灵活自定义水印：
+1. **开关控制**：`WatermarkEnabled=false` 可彻底关闭水印；设为 `true` 开启。
+2. **动态取字段（自适应不同报表）**：`WatermarkField=xm,hzxm,b_name,name`，系统会自动按顺序在报表数据中寻找匹配的列（例如自动取患者姓名），完美解决不同报表列名不一致问题。
+3. **固定文字与模板**：可配置 `WatermarkText=仅供预览` 或 `WatermarkTemplate={Field} - {HospitalName}`。未配置时默认安全回退到维护库 `dbo.qx_hospital.jgmc` 机构名称。
+4. **排除与条件隐藏**：`WatermarkExcludeReports=xmtm,tjdj`（条码与指引单默认排除不加水印）；支持通过 `WatermarkConditionField=sh_flag` 配合 `WatermarkHideWhenValue=1` 实现已审核报告自动隐藏水印。
+5. **视觉微调**：支持在 `config.ini` 中调整透明度 `WatermarkOpacity`、倾斜角度 `WatermarkAngle` 与字号 `WatermarkFontSize`。
 
 ## 旧接口
 

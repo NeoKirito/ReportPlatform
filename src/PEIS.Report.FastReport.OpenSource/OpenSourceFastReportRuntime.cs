@@ -190,7 +190,7 @@ public sealed class OpenSourceFastReportRuntime(IImageResolver? imageResolver = 
             // 否则水印不会出现在导出的PDF中
             page.Watermark.Enabled = true;
             page.Watermark.Text = text;
-            page.Watermark.Font = new Font("Arial", 54, FontStyle.Bold);
+            page.Watermark.Font = new Font("Arial", watermark.FontSize > 0 ? watermark.FontSize : 54, FontStyle.Bold);
             page.Watermark.TextFill = new SolidFill(Color.FromArgb(alpha, Color.Gray));
             page.Watermark.TextRotation = rotation;
             page.Watermark.ShowTextOnTop = true;

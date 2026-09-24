@@ -83,16 +83,63 @@ public sealed class FastReportIntegrationUnavailableException(string message) : 
 /// - 每个请求创建独立的、可变的Report实例
 /// - 通过RenderConcurrencyGate控制并发数，防止内存溢出
 /// </summary>
-public sealed class FastReportReportRenderer(
-    ReportDefinitionCache definitionCache,
-    IReportDefinitionProvider definitions,
-    ITemplateProvider templates,
-    IReportDataProvider data,
-    RenderConcurrencyGate renderGate,
-    IFastReportRuntime runtime,
-    IWatermarkTextProvider watermarkTextProvider,
-    IReportRenderTelemetry telemetry) : IReportRenderer
+public sealed class FastReportReportRenderer : IReportRenderer
 {
+    private readonly ReportDefinitionCache definitionCache;
+    private readonly IReportDefinitionProvider definitions;
+    private readonly ITemplateProvider templates;
+    private readonly IReportDataProvider data;
+    private readonly RenderConcurrencyGate renderGate;
+    private readonly IFastReportRuntime runtime;
+    private readonly IWatermarkResolver watermarkResolver;
+    private readonly IReportRenderTelemetry telemetry;
+
+    public FastReportReportRenderer(
+        ReportDefinitionCache definitionCache,
+        IReportDefinitionProvider definitions,
+        ITemplateProvider templates,
+        IReportDataProvider data,
+        RenderConcurrencyGate renderGate,
+        IFastReportRuntime runtime,
+        IWatermarkResolver watermarkResolver,
+        IReportRenderTelemetry telemetry)
+    {
+        this.definitionCache = definitionCache;
+        this.definitions = definitions;
+        this.templates = templates;
+        this.data = data;
+        this.renderGate = renderGate;
+        this.runtime = runtime;
+        this.watermarkResolver = watermarkResolver;
+        this.telemetry = telemetry;
+    }
+
+    /// <summary>
+    /// 兼容旧版仅传入 IWatermarkTextProvider 的构造函数。
+    /// </summary>
+    public FastReportReportRenderer(
+        ReportDefinitionCache definitionCache,
+        IReportDefinitionProvider definitions,
+        ITemplateProvider templates,
+        IReportDataProvider data,
+        RenderConcurrencyGate renderGate,
+        IFastReportRuntime runtime,
+        IWatermarkTextProvider watermarkTextProvider,
+        IReportRenderTelemetry telemetry)
+        : this(
+            definitionCache,
+            definitions,
+            templates,
+            data,
+            renderGate,
+            runtime,
+            new DefaultWatermarkResolver(
+                Microsoft.Extensions.Options.Options.Create(new WatermarkPolicyOptions()),
+                watermarkTextProvider),
+            telemetry)
+    {
+    }
+
     /// <summary>
     /// 渲染PDF报表的主入口。
     /// 
@@ -101,7 +148,7 @@ public sealed class FastReportReportRenderer(
     /// 2. 加载报表定义（带缓存）
     /// 3. 解码FRX模板
     /// 4. 执行SQL查询
-    /// 5. 获取水印文本
+    /// 5. 解析水印选项（支持动态取字段、条件隐藏、排除名单）
     /// 6. 进入并发控制门
     /// 7. 调用FastReport Prepare
     /// 8. 应用水印
@@ -142,15 +189,11 @@ public sealed class FastReportReportRenderer(
         metrics.Rows = reportData.RowCount;
         metrics.SqlResultSets = reportData.Tables.Count;
 
-        // 水印处理：
-        // - 水印文本来自数据库（机构名称），忽略调用方提供的文本
-        // - 调用方只能启用/禁用水印，不能冒充其他机构
-        var watermark = request.Watermark ?? new WatermarkOptions();
-        if (watermark.Enabled)
-        {
-            var text = await metrics.MeasureAsync("WatermarkText", () => watermarkTextProvider.GetWatermarkTextAsync(cancellationToken));
-            watermark = watermark with { Text = text };
-        }
+        // 水印处理：通过 IWatermarkResolver 动态解析最终水印
+        // - 支持依据不同报表字段提取（如患者姓名）、固定文字或机构名称
+        // - 支持条件隐藏（如已审核隐藏）以及排除报表列表（如条码单）
+        var watermark = await metrics.MeasureAsync("WatermarkResolve", () =>
+            watermarkResolver.ResolveAsync(definition, request, reportData, cancellationToken));
 
         FastReportPdfOutput output;
         // 进入并发控制门，限制同时渲染的报表数量
@@ -177,7 +220,10 @@ public sealed class FastReportReportRenderer(
 
             // 应用水印并导出PDF
             await using var prepared = preparation.Document;
-            await metrics.MeasureAsync("Watermark", () => runtime.ApplyWatermarkAsync(prepared, watermark, cancellationToken));
+            if (watermark.Enabled && !string.IsNullOrWhiteSpace(watermark.Text))
+            {
+                await metrics.MeasureAsync("Watermark", () => runtime.ApplyWatermarkAsync(prepared, watermark, cancellationToken));
+            }
             output = await metrics.MeasureAsync("PdfExport", () => runtime.ExportPdfAsync(prepared, profile, cancellationToken));
         }
 

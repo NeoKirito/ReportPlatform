@@ -84,6 +84,54 @@ foreach (var iniPath in candidateIniPaths)
                         builder.Configuration["Urls"] = $"http://0.0.0.0:{val}";
                     }
                 }
+                else if (string.Equals(key, "WatermarkEnabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:Enabled"] = val;
+                }
+                else if (string.Equals(key, "WatermarkField", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:Field"] = val;
+                }
+                else if (string.Equals(key, "WatermarkText", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:Text"] = val;
+                }
+                else if (string.Equals(key, "WatermarkTemplate", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:Template"] = val;
+                }
+                else if (string.Equals(key, "WatermarkExcludeReports", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:ExcludeReports"] = val;
+                }
+                else if (string.Equals(key, "WatermarkConditionField", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:ConditionField"] = val;
+                }
+                else if (string.Equals(key, "WatermarkHideWhenValue", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:HideWhenValue"] = val;
+                }
+                else if (string.Equals(key, "WatermarkOpacity", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:Opacity"] = val;
+                }
+                else if (string.Equals(key, "WatermarkAngle", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:Angle"] = val;
+                }
+                else if (string.Equals(key, "WatermarkFontSize", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["Watermark:FontSize"] = val;
+                }
+                else if (key.StartsWith("WatermarkField_", StringComparison.OrdinalIgnoreCase))
+                {
+                    var repId = key.Substring("WatermarkField_".Length).Trim();
+                    if (!string.IsNullOrWhiteSpace(repId))
+                    {
+                        builder.Configuration[$"Watermark:ReportFields:{repId}"] = val;
+                    }
+                }
             }
         }
         catch { }
@@ -116,6 +164,7 @@ builder.Services.Configure<ImageResolutionOptions>(builder.Configuration.GetSect
 builder.Services.Configure<ReportEngineOptions>(builder.Configuration.GetSection("ReportEngine"));
 builder.Services.Configure<ReportDatabaseOptions>(builder.Configuration.GetSection("ReportDatabase"));
 builder.Services.Configure<WatermarkDatabaseOptions>(builder.Configuration.GetSection("WatermarkDatabase"));
+builder.Services.Configure<WatermarkPolicyOptions>(builder.Configuration.GetSection("Watermark"));
 builder.Services.Configure<LegacyReportSchemaMapping>(builder.Configuration.GetSection("LegacyReportSchema"));
 
 // ------------------------------------------------------------
@@ -217,6 +266,7 @@ if (string.Equals(renderer, "FastReportOpenSource", StringComparison.OrdinalIgno
     // 预热FastReport编译器（减少首次渲染延迟）
     OpenSourceFastReportRuntime.WarmupCompiler();
     builder.Services.AddSingleton<IWatermarkTextProvider, SqlServerWatermarkTextProvider>();
+    builder.Services.AddSingleton<IWatermarkResolver, DefaultWatermarkResolver>();
     builder.Services.AddSingleton<IFastReportRuntime, OpenSourceFastReportRuntime>();
     builder.Services.AddSingleton<IReportRenderer, FastReportReportRenderer>();
 }

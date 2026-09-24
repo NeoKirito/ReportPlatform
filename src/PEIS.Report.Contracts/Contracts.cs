@@ -7,7 +7,8 @@ public sealed record WatermarkOptions(
     bool Enabled = true,
     string? Text = null,
     double Opacity = 0.12,
-    double Angle = -30);
+    double Angle = -30,
+    float FontSize = 54);
 
 /// <summary>
 /// The report request passed across the API/engine boundary. For legacy callers, <see cref="LegacyPayload"/>
