@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([Parameter(Mandatory = $true)][string]$ZipPath)
 
 Set-StrictMode -Version Latest
@@ -87,28 +87,28 @@ try {
     Assert-Check ($forbidden.Count -eq 0) 'ZIP does not contain report data or private production configuration'
 
     $result = Invoke-Control $primaryRoot '启动服务.cmd' 1
-    Assert-Check ($result.Contains('Fill ConnectionString')) 'Blank connection string is rejected clearly'
+    Assert-Check ($result.Contains('ConnectionString') -or $result.Contains('数据库连接')) 'Blank connection string is rejected clearly'
     [IO.File]::WriteAllText((Join-Path $primaryRoot 'config.ini'), "Port=70000`r`nConnectionString=bad", $configEncoding)
     $result = Invoke-Control $primaryRoot '启动服务.cmd' 1
-    Assert-Check ($result.Contains('Port must be')) 'Invalid port is rejected'
+    Assert-Check ($result.Contains('Port must be') -or $result.Contains('端口必须为')) 'Invalid port is rejected'
 
     $port1 = Get-FreePort
     Write-TestConfig $primaryRoot $port1
     $portProbe = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Any, $port1)
     $portProbe.Start()
     $result = Invoke-Control $primaryRoot '启动服务.cmd' 1
-    Assert-Check ($result.Contains('unavailable')) 'Occupied port is rejected without stopping its owner'
+    Assert-Check ($result.Contains('unavailable') -or $result.Contains('占用')) 'Occupied port is rejected without stopping its owner'
     $portProbe.Stop()
     $portProbe = $null
 
     $controlLock = [IO.File]::Open((Join-Path $primaryRoot 'run\control.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     $result = Invoke-Control $primaryRoot '启动服务.cmd' 1
-    Assert-Check ($result.Contains('Another start/stop')) 'Concurrent control actions are blocked'
+    Assert-Check ($result.Contains('Another start/stop') -or $result.Contains('正在执行中')) 'Concurrent control actions are blocked'
     $controlLock.Dispose()
     $controlLock = $null
 
     $result = Invoke-Control $primaryRoot '启动服务.cmd'
-    Assert-Check ($result.Contains('Service started')) 'Double-click launcher works under Windows PowerShell in a Chinese/space path'
+    Assert-Check ($result.Contains('Service started') -or $result.Contains('已成功在后台启动')) 'Double-click launcher works under Windows PowerShell in a Chinese/space path'
     $firstState = Get-Content -LiteralPath (Join-Path $primaryRoot 'run\service.json') -Raw | ConvertFrom-Json
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port1/health" -TimeoutSec 5
     Assert-Check ($health.service -eq 'PEIS.Report.Api') 'Background process remains available after launcher exits'
@@ -120,9 +120,9 @@ try {
     }
     $result = Invoke-Control $primaryRoot '启动服务.cmd'
     $sameState = Get-Content -LiteralPath (Join-Path $primaryRoot 'run\service.json') -Raw | ConvertFrom-Json
-    Assert-Check ($result.Contains('already running') -and $firstState.ProcessId -eq $sameState.ProcessId) 'Repeated start keeps the same process'
+    Assert-Check (($result.Contains('already running') -or $result.Contains('已在运行中')) -and $firstState.ProcessId -eq $sameState.ProcessId) 'Repeated start keeps the same process'
     $result = Invoke-Control $primaryRoot '查看状态.cmd'
-    Assert-Check ($result.Contains('Service is running')) 'Status launcher reports running state'
+    Assert-Check ($result.Contains('Service is running') -or $result.Contains('正在运行中')) 'Status launcher reports running state'
 
     $port2 = Get-FreePort
     Write-TestConfig $otherRoot $port2
@@ -137,7 +137,7 @@ try {
     Assert-Check ($otherHealth.status -eq 'ok') 'Stop does not terminate the other installation'
     $null = Invoke-Control $primaryRoot '关闭服务.cmd'
     $result = Invoke-Control $primaryRoot '查看状态.cmd'
-    Assert-Check ($result.Contains('Service is stopped')) 'Repeated stop is harmless and status is stopped'
+    Assert-Check ($result.Contains('Service is stopped') -or $result.Contains('停止状态') -or $result.Contains('已停止')) 'Repeated stop is harmless and status is stopped'
 
     $port3 = Get-FreePort
     Write-TestConfig $primaryRoot $port3

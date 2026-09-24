@@ -13,6 +13,7 @@ $packageRoot = Split-Path -Parent $scriptDir
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $appRoot = Join-Path $packageRoot 'app'
 $exePath = Join-Path $appRoot 'PEIS.Report.Api.exe'
 $stateRoot = Join-Path $packageRoot 'run'
@@ -21,8 +22,6 @@ $lockHandle = $null
 $exitCode = 0
 
 function Get-OwnedProcess {
-    # Always check the full executable path: never stop another installation or
-    # an unrelated process whose PID happens to have been reused.
     @(Get-Process -Name 'PEIS.Report.Api' -ErrorAction SilentlyContinue | Where-Object {
         try { $_.Path -and [string]::Equals($_.Path, $exePath, [StringComparison]::OrdinalIgnoreCase) }
         catch { $false }
@@ -42,29 +41,27 @@ function Read-ServiceConfig {
         $trimmed = $line.Trim()
         if (!$trimmed -or $trimmed.StartsWith('#') -or $trimmed.StartsWith(';') -or ($trimmed.StartsWith('[') -and $trimmed.EndsWith(']'))) { continue }
         $separator = $trimmed.IndexOf('=')
-        if ($separator -lt 0) { throw 'Invalid config.ini line. Use Name=Value.' }
+        if ($separator -lt 0) { throw 'config.ini 配置行格式无效，必须为“键=值”（例如 Port=82）。' }
         $key = $trimmed.Substring(0, $separator).Trim()
-        if ($values.ContainsKey($key)) { throw "Duplicate setting: $key" }
+        if ($values.ContainsKey($key)) { throw "config.ini 中存在重复的配置项: $key" }
         $values[$key] = $trimmed.Substring($separator + 1).Trim()
     }
     $portNumber = 0
     if (!$values.ContainsKey('Port') -or ![int]::TryParse($values['Port'], [ref]$portNumber) -or $portNumber -lt 1 -or $portNumber -gt 65535) {
-        throw 'Port must be a number from 1 to 65535 in config.ini.'
+        throw 'config.ini 中的 Port 端口必须为 1 到 65535 之间的有效数字。'
     }
     if (!$values.ContainsKey('ConnectionString') -or (Test-Blank $values['ConnectionString'])) {
-        throw 'Fill ConnectionString in config.ini before starting the service.'
+        throw '启动前请先在 config.ini 中填写 ConnectionString 数据库连接字符串。'
     }
     # Parse without opening the database or printing any part of the secret.
     try {
         $connection = New-Object System.Data.Common.DbConnectionStringBuilder
-        # DbConnectionStringBuilder implements IDictionary: PowerShell's property
-        # adapter would otherwise add a key literally named ConnectionString.
         $connection.set_ConnectionString($values['ConnectionString'])
         $hasServer = @('Server', 'Data Source', 'Address', 'Addr', 'Network Address') | Where-Object { $connection.ContainsKey($_) -and !(Test-Blank $connection[$_]) }
         $hasDatabase = @('Database', 'Initial Catalog') | Where-Object { $connection.ContainsKey($_) -and !(Test-Blank $connection[$_]) }
         if (!$hasServer -or !$hasDatabase) { throw 'Missing server/database.' }
     }
-    catch { throw 'Invalid ConnectionString. Include Server and Database; check the SQL Server connection-string syntax.' }
+    catch { throw 'ConnectionString 连接字符串格式无效，必须包含 Server 和 Database 配置。' }
     return @{ Port = $portNumber; ConnectionString = $values['ConnectionString'] }
 }
 
@@ -73,30 +70,29 @@ try {
     try {
         $lockHandle = [IO.File]::Open((Join-Path $stateRoot 'control.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     }
-    catch { throw 'Another start/stop operation is running. Please try again shortly.' }
+    catch { throw '已有另一个启动或停止操作正在执行中，请稍后再试。' }
 
     $running = @(Get-OwnedProcess)
     if ($Action -eq 'Stop') {
         foreach ($process in $running) {
-            # Recheck identity just before termination, including start time.
             $current = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
             if ($current -and $current.Path -eq $exePath -and $current.StartTime -eq $process.StartTime) {
                 Stop-Process -InputObject $current -Force
-                if (!$current.WaitForExit(15000)) { throw 'The process did not stop within 15 seconds.' }
+                if (!$current.WaitForExit(15000)) { throw '服务进程在 15 秒内未正常退出。' }
             }
         }
         Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
-        Write-Host 'Service stopped. Only this package installation was affected.'
+        Write-Host '报表服务已停止。'
     }
     elseif ($Action -eq 'Status') {
-        if ($running.Count -eq 0) { Write-Host 'Service is stopped.' }
+        if ($running.Count -eq 0) { Write-Host '报表服务当前处于停止状态。' }
         else {
-            Write-Host ('Service is running. PID: ' + (($running | ForEach-Object { $_.Id }) -join ', '))
+            Write-Host ('报表服务正在运行中。进程 PID: ' + (($running | ForEach-Object { $_.Id }) -join ', '))
             if (Test-Path -LiteralPath $statePath) {
                 try {
                     $rawState = [IO.File]::ReadAllText($statePath, [Text.Encoding]::UTF8)
                     if ($rawState -match '"Port"\s*:\s*(\d+)') {
-                        Write-Host "URL at last start: http://127.0.0.1:$($matches[1])/BaseInfo/Report/GetReportByJson"
+                        Write-Host "上次启动接口地址: http://127.0.0.1:$($matches[1])/BaseInfo/Report/GetReportByJson"
                     }
                 }
                 catch { }
@@ -104,10 +100,10 @@ try {
         }
     }
     elseif ($running.Count -gt 0) {
-        Write-Host 'Service is already running. Stop it before applying configuration changes.'
+        Write-Host '报表服务已在运行中。若需应用新的配置，请先运行 [关闭服务.cmd] 停止服务。'
     }
     else {
-        if (!(Test-Path -LiteralPath $exePath)) { throw 'app/PEIS.Report.Api.exe is missing. Extract the entire ZIP first.' }
+        if (!(Test-Path -LiteralPath $exePath)) { throw '未找到 app/PEIS.Report.Api.exe，请勿在压缩包内直接运行，请先完整解压整个 ZIP 压缩包。' }
         $config = Read-ServiceConfig
         $port = $config.Port
         $probe = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Any, $port)
@@ -115,7 +111,7 @@ try {
             $probe.Server.ExclusiveAddressUse = $true
             $probe.Start()
         }
-        catch { throw "Port $port is unavailable. Change Port in config.ini or stop its existing owner yourself." }
+        catch { throw "端口 $port 已被其他程序占用。请在 config.ini 中修改 Port 或关闭占用该端口的程序。" }
         finally { $probe.Stop() }
 
         $logsRoot = Join-Path $packageRoot 'logs'
@@ -156,7 +152,7 @@ try {
                     $errText = ''
                     if (Test-Path -LiteralPath $stderr) { $errText = (@(Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
                     if (!$errText -and (Test-Path -LiteralPath $stdout)) { $errText = (@(Get-Content -LiteralPath $stdout -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
-                    throw "Service exited during startup (ExitCode: $($child.ExitCode)). $errText"
+                    throw "服务在启动过程中异常退出 (退出码: $($child.ExitCode))。$errText"
                 }
                 try {
                     $client = New-Object System.Net.WebClient
@@ -178,13 +174,16 @@ try {
                 $errText = ''
                 if (Test-Path -LiteralPath $stderr) { $errText = (@(Get-Content -LiteralPath $stderr -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
                 if (!$errText -and (Test-Path -LiteralPath $stdout)) { $errText = (@(Get-Content -LiteralPath $stdout -ErrorAction SilentlyContinue) | Select-Object -Last 10) -join "`n" }
-                throw "Service did not become healthy within 45s (ExitCode: $($child.ExitCode)). $errText"
+                throw "服务在 45 秒内未响应健康检查 (退出码: $($child.ExitCode))。$errText"
             }
-            Write-Host "Service started. PID: $($child.Id)"
-            Write-Host "POST http://127.0.0.1:$port/BaseInfo/Report/GetReportByJson"
-            Write-Host 'For LAN access, replace 127.0.0.1 with this server IP.'
-            Write-Host 'Health check passed. Database connectivity and real reports still require a business request.'
-            Write-Host 'You may close this window. Use the stop script to stop the background process.'
+            Write-Host "============================================================" -ForegroundColor Green
+            Write-Host " PEIS 报表服务已成功在后台启动！进程 PID: $($child.Id)" -ForegroundColor Green
+            Write-Host " 本地接口地址 : http://127.0.0.1:$port/BaseInfo/Report/GetReportByJson" -ForegroundColor Cyan
+            Write-Host " 局域网访问   : 请将 127.0.0.1 替换为当前服务器的局域网 IP 地址"
+            Write-Host " 健康检查状态 : 正常通过 (服务已就绪)"
+            Write-Host "============================================================" -ForegroundColor Green
+            Write-Host "提示：服务已在后台静默运行，您可以直接关闭此黑框窗口！"
+            Write-Host "如需停止服务，请双击运行 [关闭服务.cmd]；查看状态请双击 [查看状态.cmd]。"
         }
         catch {
             if ($child) {
@@ -197,7 +196,7 @@ try {
     }
 }
 catch {
-    Write-Host ('ERROR: ' + $_.Exception.Message) -ForegroundColor Red
+    Write-Host ('【错误】' + $_.Exception.Message) -ForegroundColor Red
     $exitCode = 1
 }
 finally {
