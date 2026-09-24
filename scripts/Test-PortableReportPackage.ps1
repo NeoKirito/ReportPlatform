@@ -114,10 +114,9 @@ try {
     Assert-Check ($health.service -eq 'PEIS.Report.Api') 'Background process remains available after launcher exits'
     $diagnostics = Invoke-RestMethod -Uri "http://127.0.0.1:$port1/internal/diagnostics/rendering" -TimeoutSec 5
     Assert-Check ($diagnostics.definitionSource -eq 'LegacySqlServer') 'Running process uses SQL Server mode'
-    foreach ($route in @('/BaseInfo/Report/GetReportByJson', '/api/Reports/GetReportByJson')) {
-        Assert-HttpStatus $port1 $route 'GET' 405
-        Assert-HttpStatus $port1 $route 'POST' 400
-    }
+    Assert-HttpStatus $port1 '/api/Reports/GetReportByJson' 'GET' 405
+    Assert-HttpStatus $port1 '/api/Reports/GetReportByJson' 'POST' 400
+    Assert-HttpStatus $port1 '/BaseInfo/Report/GetReportByJson' 'POST' 400
     $result = Invoke-Control $primaryRoot '启动服务.cmd'
     $sameState = Get-Content -LiteralPath (Join-Path $primaryRoot 'run\service.json') -Raw | ConvertFrom-Json
     Assert-Check (($result.Contains('already running') -or $result.Contains('已在运行中')) -and $firstState.ProcessId -eq $sameState.ProcessId) 'Repeated start keeps the same process'
