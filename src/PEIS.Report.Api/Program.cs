@@ -124,6 +124,22 @@ foreach (var iniPath in candidateIniPaths)
                 {
                     builder.Configuration["Watermark:FontSize"] = val;
                 }
+                else if (string.Equals(key, "PdfSecurityEnabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["PdfSecurity:Enabled"] = val;
+                }
+                else if (string.Equals(key, "PdfOwnerPassword", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["PdfSecurity:OwnerPassword"] = val;
+                }
+                else if (string.Equals(key, "PdfAllowPrint", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["PdfSecurity:AllowPrint"] = val;
+                }
+                else if (string.Equals(key, "PdfAllowCopy", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["PdfSecurity:AllowCopy"] = val;
+                }
                 else if (key.StartsWith("WatermarkField_", StringComparison.OrdinalIgnoreCase))
                 {
                     var repId = key.Substring("WatermarkField_".Length).Trim();
@@ -165,6 +181,7 @@ builder.Services.Configure<ReportEngineOptions>(builder.Configuration.GetSection
 builder.Services.Configure<ReportDatabaseOptions>(builder.Configuration.GetSection("ReportDatabase"));
 builder.Services.Configure<WatermarkDatabaseOptions>(builder.Configuration.GetSection("WatermarkDatabase"));
 builder.Services.Configure<WatermarkPolicyOptions>(builder.Configuration.GetSection("Watermark"));
+builder.Services.Configure<PdfSecurityOptions>(builder.Configuration.GetSection("PdfSecurity"));
 builder.Services.Configure<LegacyReportSchemaMapping>(builder.Configuration.GetSection("LegacyReportSchema"));
 
 // ------------------------------------------------------------
@@ -267,6 +284,7 @@ if (string.Equals(renderer, "FastReportOpenSource", StringComparison.OrdinalIgno
     OpenSourceFastReportRuntime.WarmupCompiler();
     builder.Services.AddSingleton<IWatermarkTextProvider, SqlServerWatermarkTextProvider>();
     builder.Services.AddSingleton<IWatermarkResolver, DefaultWatermarkResolver>();
+    builder.Services.AddSingleton<IPdfSecurityService, PdfSecurityService>();
     builder.Services.AddSingleton<IFastReportRuntime, OpenSourceFastReportRuntime>();
     builder.Services.AddSingleton<IReportRenderer, FastReportReportRenderer>();
 }

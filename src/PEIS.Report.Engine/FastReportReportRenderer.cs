@@ -92,6 +92,7 @@ public sealed class FastReportReportRenderer : IReportRenderer
     private readonly RenderConcurrencyGate renderGate;
     private readonly IFastReportRuntime runtime;
     private readonly IWatermarkResolver watermarkResolver;
+    private readonly IPdfSecurityService pdfSecurityService;
     private readonly IReportRenderTelemetry telemetry;
 
     public FastReportReportRenderer(
@@ -102,6 +103,7 @@ public sealed class FastReportReportRenderer : IReportRenderer
         RenderConcurrencyGate renderGate,
         IFastReportRuntime runtime,
         IWatermarkResolver watermarkResolver,
+        IPdfSecurityService pdfSecurityService,
         IReportRenderTelemetry telemetry)
     {
         this.definitionCache = definitionCache;
@@ -111,7 +113,33 @@ public sealed class FastReportReportRenderer : IReportRenderer
         this.renderGate = renderGate;
         this.runtime = runtime;
         this.watermarkResolver = watermarkResolver;
+        this.pdfSecurityService = pdfSecurityService;
         this.telemetry = telemetry;
+    }
+
+    /// <summary>
+    /// 兼容仅传入 IWatermarkResolver 的构造函数。
+    /// </summary>
+    public FastReportReportRenderer(
+        ReportDefinitionCache definitionCache,
+        IReportDefinitionProvider definitions,
+        ITemplateProvider templates,
+        IReportDataProvider data,
+        RenderConcurrencyGate renderGate,
+        IFastReportRuntime runtime,
+        IWatermarkResolver watermarkResolver,
+        IReportRenderTelemetry telemetry)
+        : this(
+            definitionCache,
+            definitions,
+            templates,
+            data,
+            renderGate,
+            runtime,
+            watermarkResolver,
+            new PdfSecurityService(Microsoft.Extensions.Options.Options.Create(new PdfSecurityOptions())),
+            telemetry)
+    {
     }
 
     /// <summary>
@@ -136,6 +164,7 @@ public sealed class FastReportReportRenderer : IReportRenderer
             new DefaultWatermarkResolver(
                 Microsoft.Extensions.Options.Options.Create(new WatermarkPolicyOptions()),
                 watermarkTextProvider),
+            new PdfSecurityService(Microsoft.Extensions.Options.Options.Create(new PdfSecurityOptions())),
             telemetry)
     {
     }
@@ -235,13 +264,17 @@ public sealed class FastReportReportRenderer : IReportRenderer
                 $"报表 '{request.FileName ?? definition.ReportId}' 未查询到有效体检数据（生成页数为0）。请核对体检人/单位标识参数及对应数据库记录。");
         }
 
+        // 应用 PDF 安全权限保护（防篡改、禁止使用 PDF 编辑器修改）
+        var finalPdf = await metrics.MeasureAsync("PdfSecurity", () =>
+            Task.FromResult(pdfSecurityService.ApplySecurity(output.Pdf)));
+
         // 记录最终指标
         metrics.Pages = output.PageCount;
-        metrics.PdfBytes = output.Pdf.LongLength;
+        metrics.PdfBytes = finalPdf.LongLength;
         await metrics.MeasureAsync("ArtifactWrite", () => Task.CompletedTask);
         var observation = metrics.Complete();
         telemetry.Record(observation);
-        return new ReportRenderResult(output.Pdf, PdfExportProfile.FileName(request.FileName, request.ReportId), output.PageCount, observation.Timings)
+        return new ReportRenderResult(finalPdf, PdfExportProfile.FileName(request.FileName, request.ReportId), output.PageCount, observation.Timings)
         {
             UnavailableImageCount = metrics.ImageFailures
         };
