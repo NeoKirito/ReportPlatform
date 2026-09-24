@@ -17,6 +17,11 @@ Content-Type: application/json
 
 桌面预览/打印交付：POST /api/report-deliveries。stationId 可以不传，服务会按浏览器来源 IP 自动匹配同一台电脑上的 Agent；GET /api/report-deliveries/stations 可查看自动匹配结果和在线工作站。
 
+客户端打印助手自动检测与一键安装闭环：
+- 状态探针检测：GET /api/agent/probe（自动识别客户端IP或按 stationId 查找，返回在线状态与诊断信息）
+- 一键安装包下载：GET /api/agent/download-setup（自动注入当前服务器地址，客户端免解压双击即装即用）
+- Web 演示与检测页面：http://服务器IP:端口/ 或 http://服务器IP:端口/demo/print.html
+
 部署在 192.168.0.237 且 Port=82 时，接口地址就是：
 http://192.168.0.237:82/BaseInfo/Report/GetReportByJson
 本包不是转发到该地址的代理；它在当前机器独立提供报表接口。

@@ -4,13 +4,69 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  <title>PEIS Report Platform</title>
+  <title>PEIS Report Platform - 报表与打印服务平台</title>
+  <style>
+    body { font-family: system-ui, -apple-system, 'Microsoft YaHei', sans-serif; margin: 40px auto; max-width: 920px; line-height: 1.6; color: #333; background: #fafafa; }
+    .header { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid #e8e8e8; }
+    .card { background: #fff; border: 1px solid #e8e8e8; border-radius: 10px; padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
+    h2 { margin-top: 0; font-size: 18px; color: #1f1f1f; display: flex; align-items: center; gap: 8px; }
+    ul { padding-left: 20px; margin: 10px 0; }
+    li { margin: 8px 0; }
+    a { color: #1890ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+    .badge-blue { background: #e6f7ff; color: #1890ff; border: 1px solid #91d5ff; }
+    .badge-green { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+    .btn-download { display: inline-flex; align-items: center; gap: 8px; background: #1890ff; color: #fff; padding: 10px 20px; border-radius: 6px; font-weight: 600; text-decoration: none; box-shadow: 0 2px 4px rgba(24,144,255,0.2); }
+    .btn-download:hover { background: #40a9ff; text-decoration: none; color: #fff; }
+  </style>
+  <script src="/agent-detector.js"></script>
 </head>
-<body style="font-family:system-ui,'Microsoft YaHei',sans-serif;margin:40px;line-height:1.7">
-  <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
-    <img src="/logo.png" alt="Logo" style="width:64px;height:64px;object-fit:contain;">
-    <h1 style="margin:0;">PEIS Report Platform</h1>
+<body>
+  <div class="header">
+    <img src="/logo.png" alt="Logo" style="width:56px;height:56px;object-fit:contain;">
+    <div>
+      <h1 style="margin:0;font-size:24px;">PEIS Report Platform</h1>
+      <div style="color:#666;font-size:13px;margin-top:4px;">体检信息系统报表与硬件打印一体化服务平台</div>
+    </div>
   </div>
-  <p>API 服务已启动。B/S 多打印机演示：<a href="/demo/print.html">/demo/print.html</a></p>
+
+  <!-- 本地打印助手状态探测横幅 -->
+  <div id="agentStatusBanner"></div>
+
+  <div class="card">
+    <h2><span>🖨️</span> 客户端打印助手 (PEIS.PrintAgent) 一键安装</h2>
+    <p>为满足医院护士站、医生站“无感知、无弹窗、自动安装”的业务诉求，服务端提供自适应单文件安装包：</p>
+    <ul>
+      <li><strong>全自动安装：</strong> 单文件可执行程序（<code>.exe</code>），无需解压 ZIP，下载后直接双击即可完成部署并自动常驻托盘。</li>
+      <li><strong>免管理员权限：</strong> 部署至用户目录（<code>%LOCALAPPDATA%\Programs</code>），在受限域账户或普通权限机器上 100% 成功运行，无 UAC 拦截。</li>
+      <li><strong>服务端预设配置：</strong> 下载时服务端已动态注入当前服务器地址，客户端无需手工配置 <code>ServerUrl</code>。</li>
+      <li><strong>开机自启动：</strong> 自动创建桌面与开始菜单启动项，重启电脑后静默就绪。</li>
+    </ul>
+    <div style="margin-top: 16px;">
+      <a class="btn-download" href="/api/agent/download-setup" download>
+        <span>📥</span>
+        <span>一键下载打印助手安装包 (PEIS-PrintAgent-Setup.exe)</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span>🔗</span> 快速导航与接口诊断</h2>
+    <ul>
+      <li><strong>业务演示页面：</strong> <a href="/demo/print.html">/demo/print.html</a> <span class="badge badge-blue">一键登记打印</span></li>
+      <li><strong>打印助手探针检测接口：</strong> <a href="/api/agent/probe" target="_blank">/api/agent/probe</a> <span class="badge badge-green">GET</span></li>
+      <li><strong>已在线打印客户端列表：</strong> <a href="/api/print/agents" target="_blank">/api/print/agents</a> <span class="badge badge-green">GET</span></li>
+      <li><strong>打印动作场景定义列表：</strong> <a href="/api/print/actions" target="_blank">/api/print/actions</a> <span class="badge badge-green">GET</span></li>
+      <li><strong>API 服务健康检查：</strong> <a href="/health" target="_blank">/health</a> <span class="badge badge-green">GET</span></li>
+      <li><strong>渲染诊断指标：</strong> <a href="/internal/diagnostics/rendering" target="_blank">/internal/diagnostics/rendering</a> <span class="badge badge-green">GET</span></li>
+    </ul>
+  </div>
+
+  <script>
+    PeisAgentDetector.mountBanner('#agentStatusBanner', {
+      interval: 4000
+    });
+  </script>
 </body>
 </html>

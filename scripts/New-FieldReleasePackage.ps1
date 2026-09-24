@@ -72,6 +72,20 @@ try {
     & dotnet publish 'src\PEIS.PrintAgent\PEIS.PrintAgent.csproj' @publishProperties '-o' $agentApp
     if ($LASTEXITCODE -ne 0) { throw 'PrintAgent publish failed.' }
 
+    # 2.1 构建单文件免解压客户端安装程序 PEIS.PrintAgent.Setup
+    Write-Host "Building PrintAgent single-file Setup..." -ForegroundColor Cyan
+    $buildSetupScript = Join-Path $PSScriptRoot 'Build-AgentSetup.ps1'
+    $apiDownloads = Join-Path $apiApp 'wwwroot\downloads'
+    New-Item -ItemType Directory -Path $apiDownloads -Force | Out-Null
+    $setupTargetApi = Join-Path $apiDownloads 'PEIS-PrintAgent-Setup.exe'
+    $setupTargetAgent = Join-Path $agentOutput 'PEIS-PrintAgent-Setup.exe'
+
+    & $buildSetupScript -Configuration 'Release' -OutputExe $setupTargetApi
+    if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $setupTargetApi)) {
+        throw "Build-AgentSetup failed."
+    }
+    Copy-Item -LiteralPath $setupTargetApi -Destination $setupTargetAgent -Force
+
     # 3. 组织 01-ReportApi 外部脚本与配置
     Copy-Item -LiteralPath 'deploy\field-release\api\scripts\Service.ps1' -Destination $apiScripts -Force
     Get-ChildItem -LiteralPath 'deploy\field-release\api' -File | Copy-Item -Destination $apiOutput -Force
@@ -101,6 +115,12 @@ try {
     }
     if (!(Test-Path -LiteralPath (Join-Path $agentApp 'tools\SumatraPDF.exe'))) {
         throw "Missing required silent print engine: tools\SumatraPDF.exe"
+    }
+    if (!(Test-Path -LiteralPath (Join-Path $apiApp 'wwwroot\downloads\PEIS-PrintAgent-Setup.exe'))) {
+        throw "Missing required auto-installer: wwwroot\downloads\PEIS-PrintAgent-Setup.exe"
+    }
+    if (!(Test-Path -LiteralPath (Join-Path $agentOutput 'PEIS-PrintAgent-Setup.exe'))) {
+        throw "Missing required agent installer: 02-PrintAgent\PEIS-PrintAgent-Setup.exe"
     }
 
     # 7. 规范化批处理与脚本换行符和编码

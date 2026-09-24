@@ -140,6 +140,14 @@ foreach (var iniPath in candidateIniPaths)
                 {
                     builder.Configuration["PdfSecurity:AllowCopy"] = val;
                 }
+                else if (string.Equals(key, "AgentServerUrl", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["AgentInstall:ServerUrl"] = val;
+                }
+                else if (string.Equals(key, "AgentSetupPath", StringComparison.OrdinalIgnoreCase))
+                {
+                    builder.Configuration["AgentInstall:SetupFilePath"] = val;
+                }
                 else if (key.StartsWith("WatermarkField_", StringComparison.OrdinalIgnoreCase))
                 {
                     var repId = key.Substring("WatermarkField_".Length).Trim();

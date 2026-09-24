@@ -22,3 +22,5 @@ scratch/
 .env.*
 !*.env.example
 temp-agent-publish/
+**/wwwroot/downloads/*.exe
+**/PrintAgentPayload.zip
