@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using PEIS.Report.Contracts;
 
 namespace PEIS.Report.Engine;
@@ -95,6 +96,7 @@ public sealed class FastReportReportRenderer : IReportRenderer
     private readonly IPdfSecurityService pdfSecurityService;
     private readonly IReportRenderTelemetry telemetry;
 
+    [ActivatorUtilitiesConstructor]
     public FastReportReportRenderer(
         ReportDefinitionCache definitionCache,
         IReportDefinitionProvider definitions,
@@ -104,7 +106,8 @@ public sealed class FastReportReportRenderer : IReportRenderer
         IFastReportRuntime runtime,
         IWatermarkResolver watermarkResolver,
         IPdfSecurityService pdfSecurityService,
-        IReportRenderTelemetry telemetry)
+        IReportRenderTelemetry telemetry,
+        IWatermarkTextProvider? watermarkTextProvider = null)
     {
         this.definitionCache = definitionCache;
         this.definitions = definitions;

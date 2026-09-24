@@ -286,7 +286,16 @@ if (string.Equals(renderer, "FastReportOpenSource", StringComparison.OrdinalIgno
     builder.Services.AddSingleton<IWatermarkResolver, DefaultWatermarkResolver>();
     builder.Services.AddSingleton<IPdfSecurityService, PdfSecurityService>();
     builder.Services.AddSingleton<IFastReportRuntime, OpenSourceFastReportRuntime>();
-    builder.Services.AddSingleton<IReportRenderer, FastReportReportRenderer>();
+    builder.Services.AddSingleton<IReportRenderer>(sp => new FastReportReportRenderer(
+        sp.GetRequiredService<ReportDefinitionCache>(),
+        sp.GetRequiredService<IReportDefinitionProvider>(),
+        sp.GetRequiredService<ITemplateProvider>(),
+        sp.GetRequiredService<IReportDataProvider>(),
+        sp.GetRequiredService<RenderConcurrencyGate>(),
+        sp.GetRequiredService<IFastReportRuntime>(),
+        sp.GetRequiredService<IWatermarkResolver>(),
+        sp.GetRequiredService<IPdfSecurityService>(),
+        sp.GetRequiredService<IReportRenderTelemetry>()));
 }
 else
 {

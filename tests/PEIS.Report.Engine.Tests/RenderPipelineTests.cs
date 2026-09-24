@@ -96,6 +96,102 @@ public sealed class RenderPipelineTests
         Assert.Contains("未查询到有效体检数据（生成页数为0）", ex.Message);
     }
 
+    [Fact]
+    public async Task FastReport_renderer_renders_pdf_with_various_parameter_types()
+    {
+        var runtime = new SuccessFastReportRuntime();
+        var renderer = new FastReportReportRenderer(
+            new ReportDefinitionCache(),
+            new DeterministicReportDefinitionProvider(),
+            new DeterministicTemplateProvider(),
+            new EmptyReportDataProvider(),
+            new RenderConcurrencyGate(new RenderConcurrencyOptions { MaxConcurrentRenders = 2 }),
+            runtime,
+            new DefaultWatermarkResolver(Microsoft.Extensions.Options.Options.Create(new WatermarkPolicyOptions()), new DisabledWatermarkTextProvider()),
+            new PdfSecurityService(Microsoft.Extensions.Options.Options.Create(new PdfSecurityOptions())),
+            new InMemoryReportRenderTelemetry());
+
+        var json = JsonDocument.Parse("""
+            {
+                "tjh": "TJ-2026-9999",
+                "tjcs": 3,
+                "isVip": true,
+                "score": 98.5,
+                "items": ["blood", "urine"],
+                "meta": { "dept": "InternalMedicine", "doctor": "Dr. Wang" }
+            }
+            """);
+
+        var parameters = new Dictionary<string, JsonElement>();
+        foreach (var prop in json.RootElement.EnumerateObject())
+        {
+            parameters[prop.Name] = prop.Value.Clone();
+        }
+
+        var request = new ReportRenderRequest(
+            "GUIDE_A4",
+            parameters,
+            "print-a4",
+            Watermark: new WatermarkOptions(Enabled: true, Text: "测试体检中心", Opacity: 0.2, Angle: -30, FontSize: 48),
+            FileName: "TJ_2026_Report.pdf");
+
+        var result = await renderer.RenderPdfAsync(request, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("TJ_2026_Report.pdf", result.FileName);
+        Assert.Equal(2, result.PageCount);
+        Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(result.Pdf));
+        Assert.True(runtime.WatermarkApplied);
+        Assert.Equal("测试体检中心", runtime.AppliedWatermark?.Text);
+    }
+
+    [Fact]
+    public async Task FastReport_renderer_works_with_empty_parameters()
+    {
+        var runtime = new SuccessFastReportRuntime();
+        var renderer = new FastReportReportRenderer(
+            new ReportDefinitionCache(),
+            new DeterministicReportDefinitionProvider(),
+            new DeterministicTemplateProvider(),
+            new EmptyReportDataProvider(),
+            new RenderConcurrencyGate(new RenderConcurrencyOptions { MaxConcurrentRenders = 1 }),
+            runtime,
+            new DefaultWatermarkResolver(Microsoft.Extensions.Options.Options.Create(new WatermarkPolicyOptions()), new DisabledWatermarkTextProvider()),
+            new PdfSecurityService(Microsoft.Extensions.Options.Options.Create(new PdfSecurityOptions())),
+            new InMemoryReportRenderTelemetry());
+
+        var request = new ReportRenderRequest("GUIDE_A4", new Dictionary<string, JsonElement>());
+        var result = await renderer.RenderPdfAsync(request, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("GUIDE_A4.pdf", result.FileName);
+        Assert.Equal(2, result.PageCount);
+    }
+
+    private sealed class SuccessFastReportRuntime : IFastReportRuntime
+    {
+        public bool WatermarkApplied { get; private set; }
+        public WatermarkOptions? AppliedWatermark { get; private set; }
+
+        public Task<FastReportRuntimePreparation> PrepareAsync(FastReportRenderContext context, CancellationToken cancellationToken)
+            => Task.FromResult(new FastReportRuntimePreparation(new DummyPreparedDocument(), Array.Empty<ReportStageTiming>()));
+
+        public Task ApplyWatermarkAsync(IFastReportPreparedDocument prepared, WatermarkOptions watermark, CancellationToken cancellationToken)
+        {
+            WatermarkApplied = true;
+            AppliedWatermark = watermark;
+            return Task.CompletedTask;
+        }
+
+        public Task<FastReportPdfOutput> ExportPdfAsync(IFastReportPreparedDocument prepared, PdfExportProfile profile, CancellationToken cancellationToken)
+            => Task.FromResult(new FastReportPdfOutput(System.Text.Encoding.ASCII.GetBytes("%PDF-1.4 dummy document"), 2));
+
+        private sealed class DummyPreparedDocument : IFastReportPreparedDocument
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
+    }
+
     private sealed class ZeroPageFastReportRuntime : IFastReportRuntime
     {
         public Task<FastReportRuntimePreparation> PrepareAsync(FastReportRenderContext context, CancellationToken cancellationToken)
@@ -114,3 +210,4 @@ public sealed class RenderPipelineTests
         }
     }
 }
+
