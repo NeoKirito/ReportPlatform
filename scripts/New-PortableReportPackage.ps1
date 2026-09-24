@@ -80,7 +80,10 @@ foreach ($file in (Get-ChildItem -LiteralPath $packageRoot -Recurse -File | Wher
     [IO.File]::WriteAllText($file.FullName, $content, $encoding)
 }
 
-Compress-Archive -LiteralPath $packageRoot -DestinationPath $zipPath -CompressionLevel Optimal
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+Start-Sleep -Seconds 2
+[System.IO.Compression.ZipFile]::CreateFromDirectory($packageRoot, $zipPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
 $hash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
 "$hash  $packageName.zip" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ASCII
 Write-Output "Package folder: $packageRoot"
