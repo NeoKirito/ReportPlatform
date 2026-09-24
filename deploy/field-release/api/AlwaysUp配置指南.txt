@@ -1,0 +1,82 @@
+﻿PEIS 报表服务 — AlwaysUp Windows 服务托管配置指南
+
+在体检中心服务器上，推荐使用 AlwaysUp 将本报表服务托管为 7×24 小时运行的 Windows 服务。
+AlwaysUp 可以在系统开机时无需登录自动启动服务、程序异常时自动重启、支持 HTTP 监听探测假死并自动拉起。
+
+================================================================================
+一、AlwaysUp 常规配置（General 选项卡）
+================================================================================
+打开 AlwaysUp，点击菜单【Application】 -> 【Add...】：
+
+方式一：直接运行 EXE（最稳定，推荐）
+1. Name（服务名称）：
+   PEIS.Report.Api 或 体检报表服务
+2. Application（应用程序路径）：
+   浏览并选择解压目录下的 app\PEIS.Report.Api.exe
+   例如：D:\PEIS.ReportApi-Portable-win-x64\app\PEIS.Report.Api.exe
+3. Arguments（命令行参数）：
+   留空即可（程序会自动读取上级目录 config.ini 中的 Port 和 ConnectionString）。
+4. Working directory（工作目录）：
+   填写解压目录下的 app 目录，例如：
+   D:\PEIS.ReportApi-Portable-win-x64\app
+5. Start the application（启动方式）：
+   选择 Automatically, but wait a bit when the computer boots（开机自动启动，推荐）
+
+方式二：使用批处理脚本（若习惯通过脚本启动）
+1. Application（应用程序路径）：
+   浏览并选择解压根目录下的 启动服务_AlwaysUp专用.cmd
+   例如：D:\PEIS.ReportApi-Portable-win-x64\启动服务_AlwaysUp专用.cmd
+2. Arguments（命令行参数）：
+   留空即可。
+3. Working directory（工作目录）：
+   填写解压根目录：
+   D:\PEIS.ReportApi-Portable-win-x64
+
+★ 关键提示：
+请勿选择“启动服务.cmd”（原脚本会在后台启动后立即退出，AlwaysUp 会误判为程序退出而导致无限重启）。必须选择“启动服务_AlwaysUp专用.cmd”或直接选择“app\PEIS.Report.Api.exe”。
+
+================================================================================
+二、配置 HTTP 存活监听与假死自愈（Monitor / Sanity Check 选项卡）
+================================================================================
+AlwaysUp 支持定期探测 HTTP 接口，如果端口无法访问或服务卡死无响应，会自动重启服务：
+
+1. 切换到【Monitor】或【Sanity Check】选项卡。
+2. 勾选【Check a URL】（或“Whenever the URL is unreachable”）。
+3. 填写健康检查地址：
+   http://127.0.0.1:82/health
+   （提示：82 请修改为您在 config.ini 中实际配置的 Port 端口）。
+4. Check frequency（检查频率）：
+   建议设置为 30 秒或 60 秒。
+5. 预期状态码（Expected status code）：
+   200
+6. 响应内容检查（Optional text）：
+   PEIS.Report.Api
+7. Action to take（异常处理动作）：
+   选择【Restart the application】（自动重启应用程序）。
+
+================================================================================
+三、自动重启与恢复策略（Restart 选项卡）
+================================================================================
+1. 切换到【Restart】选项卡。
+2. 确保勾选：
+   ☑ Automatically restart the application if it crashes（程序崩溃时自动重启）
+3. 建议设置重启间隔：
+   Immediately（立即）或 5 seconds later（5秒后）。
+
+================================================================================
+四、运行账号与权限（Logon 选项卡）
+================================================================================
+1. 切换到【Logon】选项卡。
+2. 默认选择【Local System account】（系统内置服务账号）即可。
+3. 若数据库连接串使用 Windows 集成身份验证，请切换为特定的 Windows 域用户/管理员账号并输入密码。
+
+================================================================================
+五、验证服务运行
+================================================================================
+1. 点击【Save】保存配置。
+2. 在 AlwaysUp 列表中右键点击该服务，选择【Start Application】。
+3. 状态栏应显示绿色【Running】状态。
+4. 打开服务器浏览器，访问：
+   http://127.0.0.1:82/health
+   页面返回类似以下 JSON 即代表服务正常监听并提供报表能力：
+   {"status":"ok","service":"PEIS.Report.Api","time":"..."}

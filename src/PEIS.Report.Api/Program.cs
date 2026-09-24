@@ -69,20 +69,12 @@ foreach (var iniPath in candidateIniPaths)
                 var val = trimmed.Substring(sep + 1).Trim();
                 if (string.Equals(key, "ConnectionString", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(val))
                 {
-                    // 只在未配置或为占位符时覆盖
-                    var existing = builder.Configuration["ReportDatabase:ConnectionString"];
-                    if (string.IsNullOrWhiteSpace(existing) || existing.Contains("请填写"))
-                    {
-                        builder.Configuration["ReportDatabase:ConnectionString"] = val;
-                        builder.Configuration["WatermarkDatabase:ConnectionString"] = val;
-                    }
+                    builder.Configuration["ReportDatabase:ConnectionString"] = val;
+                    builder.Configuration["WatermarkDatabase:ConnectionString"] = val;
                 }
                 else if (string.Equals(key, "Port", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(val))
                 {
-                    if (string.IsNullOrWhiteSpace(builder.Configuration["Urls"]))
-                    {
-                        builder.Configuration["Urls"] = $"http://0.0.0.0:{val}";
-                    }
+                    builder.Configuration["Urls"] = $"http://0.0.0.0:{val}";
                 }
                 else if (string.Equals(key, "WatermarkEnabled", StringComparison.OrdinalIgnoreCase))
                 {
@@ -434,5 +426,13 @@ app.MapGet("/api/print/artifacts/{artifactId:guid}", async (Guid artifactId, IPd
 
 // SignalR Hub（PrintAgent实时通信）
 app.MapHub<PrintAgentHub>("/hubs/print-agent");
+
+var listeningUrls = builder.Configuration["Urls"] ?? "http://0.0.0.0:82";
+app.Logger.LogInformation("============================================================");
+app.Logger.LogInformation(" PEIS 报表服务已启动并持续监听中");
+app.Logger.LogInformation(" 监听地址: {Urls}", listeningUrls);
+app.Logger.LogInformation(" 健康检查: {Urls}/health", listeningUrls.Split(',')[0].Trim());
+app.Logger.LogInformation(" 核心接口: {Urls}/BaseInfo/Report/GetReportByJson", listeningUrls.Split(',')[0].Trim());
+app.Logger.LogInformation("============================================================");
 
 app.Run();

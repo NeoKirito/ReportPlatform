@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Start', 'Stop', 'Status')]
+    [ValidateSet('Start', 'Stop', 'Status', 'Run', 'Console')]
     [string]$Action
 )
 
@@ -97,6 +97,57 @@ try {
                 }
                 catch { }
             }
+        }
+    }
+    elseif ($Action -in 'Run', 'Console') {
+        if ($running.Count -gt 0) {
+            throw '报表服务已在运行中。若需在前台运行，请先运行 [关闭服务.cmd] 停止已有实例。'
+        }
+        if (!(Test-Path -LiteralPath $exePath)) { throw '未找到 app/PEIS.Report.Api.exe，请勿在压缩包内直接运行，请先完整解压整个 ZIP 压缩包。' }
+        $config = Read-ServiceConfig
+        $port = $config.Port
+        $probe = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Any, $port)
+        try {
+            $probe.Server.ExclusiveAddressUse = $true
+            $probe.Start()
+        }
+        catch { throw "端口 $port 已被其他程序占用。请在 config.ini 中修改 Port 或关闭占用该端口的程序。" }
+        finally { $probe.Stop() }
+
+        $settings = @{
+            'DOTNET_ENVIRONMENT' = 'Production'
+            'ASPNETCORE_ENVIRONMENT' = 'Production'
+            'ReportDatabase__ConnectionString' = $config.ConnectionString
+            'WatermarkDatabase__ConnectionString' = $config.ConnectionString
+            'ReportEngine__DefinitionSource' = 'LegacySqlServer'
+            'ReportEngine__Renderer' = 'FastReportOpenSource'
+        }
+        foreach ($key in $settings.Keys) {
+            [Environment]::SetEnvironmentVariable($key, $settings[$key], 'Process')
+        }
+
+        # 写入运行状态，以便其他工具/查看状态.cmd 识别
+        $stateText = "{`"ProcessId`":$PID,`"Port`":$port,`"Mode`":`"Foreground`",`"StartedAt`":`"$([DateTime]::UtcNow.ToString('o'))`"}"
+        [IO.File]::WriteAllText($statePath, $stateText, [Text.Encoding]::UTF8)
+
+        # 释放控制锁，允许外部工具并发查询状态或发送停止请求
+        if ($lockHandle) { $lockHandle.Dispose(); $lockHandle = $null }
+
+        Write-Host "============================================================" -ForegroundColor Green
+        Write-Host " PEIS 报表服务正在前台运行中 (AlwaysUp / 控制台宿主模式)" -ForegroundColor Green
+        Write-Host " 本地接口地址 : http://127.0.0.1:$port/BaseInfo/Report/GetReportByJson" -ForegroundColor Cyan
+        Write-Host " 健康检查地址 : http://127.0.0.1:$port/health" -ForegroundColor Cyan
+        Write-Host " 提示：按 Ctrl+C 可停止服务；由 AlwaysUp 托管时请由 AlwaysUp 控制" -ForegroundColor Yellow
+        Write-Host "============================================================" -ForegroundColor Green
+
+        try {
+            Push-Location $appRoot
+            & $exePath @('--urls', "http://0.0.0.0:$port")
+            $exitCode = $LASTEXITCODE
+        }
+        finally {
+            Pop-Location
+            Remove-Item -LiteralPath $statePath -Force -ErrorAction SilentlyContinue
         }
     }
     elseif ($running.Count -gt 0) {

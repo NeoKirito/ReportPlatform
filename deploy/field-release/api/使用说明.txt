@@ -39,9 +39,11 @@ ConnectionString 必须指向已有的 SQL Server 报表数据库；不会创建
 四、运行环境和注意事项
 包含 .NET 10 Windows x64 运行时，无需安装 SDK、.NET 或 IIS。
 面向 Windows 10/11 x64、Windows Server 2019/2022/2025 等适配 .NET 10 的系统。
-本包只启动报表 API，不安装 Windows Service、不设置开机自启、不安装打印代理。
-当前用户退出登录或系统重启后，需要重新双击启动。
-不要直接双击 app 目录内的 EXE；只有根目录启动脚本会读取 config.ini。
+本包提供两种启动方式：
+- 桌面双击：“启动服务.cmd”（后台静默运行，带健康检测和操作提示）。
+- Windows服务/AlwaysUp托管：“启动服务_AlwaysUp专用.cmd”或直接配置“app\PEIS.Report.Api.exe”
+  （前台持续阻塞运行，支持 AlwaysUp 的 HTTP 探针监听与崩溃假死自愈，详见同目录《AlwaysUp配置指南.txt》）。
+当前用户退出登录或系统重启后，若未通过 AlwaysUp 托管为服务，需要重新启动。
 运行账号需要有解压目录的读写权限，建议启动和关闭使用同一 Windows 账号。
 停止操作会终止本目录的报表进程，正在生成的报表会中断，请在空闲时关闭。
 可重复启动/关闭；不同解压目录下的服务互不停止（必须使用不同端口）。

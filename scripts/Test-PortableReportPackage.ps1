@@ -73,7 +73,9 @@ try {
     foreach ($candidate in @($extracted[0].FullName, $primaryRoot)) {
         if (![IO.Path]::GetFullPath($candidate).StartsWith($testRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe test move path.' }
     }
-    Move-Item -LiteralPath $extracted[0].FullName -Destination $primaryRoot
+    Start-Sleep -Milliseconds 500
+    Copy-Item -LiteralPath $extracted[0].FullName -Destination $primaryRoot -Recurse
+    Remove-Item -LiteralPath $extracted[0].FullName -Recurse -Force -ErrorAction SilentlyContinue
     Copy-Item -LiteralPath $primaryRoot -Destination $otherRoot -Recurse
     $ready = $true
 
