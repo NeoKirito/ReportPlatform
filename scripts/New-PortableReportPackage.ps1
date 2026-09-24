@@ -53,7 +53,7 @@ $config | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $appRoo
 
 $iniPath = Join-Path $packageRoot 'config.ini'
 if (Test-Path -LiteralPath $iniPath) {
-    $iniLines = Get-Content -LiteralPath $iniPath
+    $iniLines = [IO.File]::ReadAllLines($iniPath, [System.Text.Encoding]::UTF8)
     $newIniLines = @()
     foreach ($line in $iniLines) {
         if ($line.Trim().StartsWith('ConnectionString=')) {
@@ -62,7 +62,7 @@ if (Test-Path -LiteralPath $iniPath) {
             $newIniLines += $line
         }
     }
-    $newIniLines | Set-Content -LiteralPath $iniPath -Encoding UTF8
+    [IO.File]::WriteAllLines($iniPath, $newIniLines, (New-Object Text.UTF8Encoding($true)))
 }
 # Environment-specific settings must not override the generated safe defaults.
 Get-ChildItem -LiteralPath $appRoot -File -Filter 'appsettings.*.json' | Remove-Item -Force
@@ -75,7 +75,7 @@ foreach ($required in @('PEIS.Report.Api.exe', 'coreclr.dll', 'hostfxr.dll', 'Sy
 $utf8Bom = New-Object Text.UTF8Encoding($true)
 $utf8NoBom = New-Object Text.UTF8Encoding($false)
 foreach ($file in (Get-ChildItem -LiteralPath $packageRoot -Recurse -File | Where-Object { $_.Extension -in '.cmd', '.ps1', '.ini', '.txt' })) {
-    $content = [IO.File]::ReadAllText($file.FullName).Replace("`r`n", "`n").Replace("`n", "`r`n")
+    $content = [IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8).Replace("`r`n", "`n").Replace("`n", "`r`n")
     $encoding = if ($file.Extension -eq '.cmd') { $utf8NoBom } else { $utf8Bom }
     [IO.File]::WriteAllText($file.FullName, $content, $encoding)
 }

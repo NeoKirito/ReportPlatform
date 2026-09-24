@@ -40,11 +40,10 @@ function Read-ServiceConfig {
     $values = @{}
     foreach ($line in [IO.File]::ReadAllLines($configPath, [Text.Encoding]::UTF8)) {
         $trimmed = $line.Trim()
-        if (!$trimmed -or $trimmed.StartsWith('#') -or $trimmed.StartsWith(';')) { continue }
+        if (!$trimmed -or $trimmed.StartsWith('#') -or $trimmed.StartsWith(';') -or ($trimmed.StartsWith('[') -and $trimmed.EndsWith(']'))) { continue }
         $separator = $trimmed.IndexOf('=')
         if ($separator -lt 0) { throw 'Invalid config.ini line. Use Name=Value.' }
         $key = $trimmed.Substring(0, $separator).Trim()
-        if ($key -ne 'Port' -and $key -ne 'ConnectionString') { throw 'Unknown setting in config.ini. Only Port and ConnectionString are supported.' }
         if ($values.ContainsKey($key)) { throw "Duplicate setting: $key" }
         $values[$key] = $trimmed.Substring($separator + 1).Trim()
     }
